@@ -188,7 +188,7 @@ if page == "📤 Review & Upload":
                 
                 st.session_state.staged_fixes = []
             
-            st.success("✨ All operations complete!")
+            st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar or wait for automatic runs.")
             st.balloons()
     else:
         st.caption("Waiting for files to process...")
