@@ -10,6 +10,8 @@ print("🚀 RUNNING SCRIPT VERSION: 5.0 (Python SAS Generation)")
 # Load credentials
 load_dotenv()
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
+if not ACCOUNT_NAME:
+    raise ValueError("AZURE_STORAGE_ACCOUNT environment variable is not set")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 
 # Service Principal Credentials (needed to sign the SAS token)
