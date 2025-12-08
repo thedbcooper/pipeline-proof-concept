@@ -155,6 +155,9 @@ def process_pipeline():
             # Fix 1: Typo 'download_stream' vs 'downloaded_stream'
             history_df = pl.read_parquet(io.BytesIO(download_stream.readall()))
             
+            # Align column order - use new_batch_df column order as the standard
+            history_df = history_df.select(new_batch_df.columns)
+
             print("   Merging...")
             combined_df = pl.concat([history_df, new_batch_df])
             final_df = combined_df.unique(subset=["sample_id"], keep="last")
