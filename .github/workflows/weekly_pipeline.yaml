@@ -31,7 +31,7 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
         # 'uv run' executes the command inside the .venv created by 'uv sync'
-        run: uv run python -m pipeline.1_process_data_cloud
+        run: uv run python -m pipeline.process_data_cloud
 
       - name: Generate CDC Report
         if: success()
@@ -40,4 +40,4 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        run: uv run python -m pipeline.2_export_report
+        run: uv run python -m pipeline.export_report
