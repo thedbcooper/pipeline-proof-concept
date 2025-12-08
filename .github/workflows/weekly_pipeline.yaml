@@ -2,7 +2,7 @@ name: Weekly Lab Pipeline
 
 on:
   schedule:
-    - cron: '0 12 * * 1'
+    - cron: '0 14 * * 3'
   workflow_dispatch:
 
 jobs:
@@ -31,13 +31,13 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
         # 'uv run' executes the command inside the .venv created by 'uv sync'
-        run: uv run python 3_process_data_cloud.py
+        run: uv run python 1_process_data_cloud.py
 
-      - name: (Optional) Generate CDC Report
+      - name: Generate CDC Report
         if: success()
         env:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        run: uv run python 5_export_report.py
+        run: uv run python 2_export_report.py
