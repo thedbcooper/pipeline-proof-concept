@@ -17,8 +17,8 @@ blob_service = BlobServiceClient(ACCOUNT_URL, credential=credential)
 landing_client = blob_service.get_container_client("landing-zone")
 
 # --- GENERATOR SETTINGS ---
-WEEKS_TO_GENERATE = 5
-SAMPLES_PER_WEEK = 10
+WEEKS_TO_GENERATE = 15
+SAMPLES_PER_WEEK = 25
 
 print(f"🚀 Generating data for the past {WEEKS_TO_GENERATE} weeks...")
 
