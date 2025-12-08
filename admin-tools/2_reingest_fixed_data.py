@@ -1,11 +1,12 @@
 import pandas as pd
 import os
 import shutil
-from pydantic import BaseModel, field_validator, ValidationError
 from datetime import date
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
+from ..models import LabResult
+from pydantic import ValidationError
 
 # --- CONFIGURATION ---
 load_dotenv()
@@ -15,21 +16,6 @@ ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 LOCAL_FIX_DIR = "fix_me_please"
 LOCAL_DONE_DIR = "fix_me_please/completed"
 os.makedirs(LOCAL_DONE_DIR, exist_ok=True)
-
-# --- REUSE YOUR PYDANTIC MODEL ---
-# (Ideally, you would move this to a shared file like 'models.py', but copy-paste is fine for now)
-class LabResult(BaseModel):
-    sample_id: str
-    test_date: date
-    result: str
-    viral_load: int
-
-    @field_validator('result')
-    def check_result_code(cls, v):
-        allowed = ['POS', 'NEG', 'N/A']
-        if v not in allowed:
-            raise ValueError(f"Invalid result code: '{v}'. Must be POS, NEG, or N/A")
-        return v
 
 def process_reingest():
     print("🕵️‍♀️ Scanning local folder for fixed files...")

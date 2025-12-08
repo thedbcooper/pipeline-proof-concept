@@ -9,3 +9,6 @@ fix_me_please/
 
 # environment files
 .venv
+
+# cache
+__pycache__/

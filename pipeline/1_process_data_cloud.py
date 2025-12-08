@@ -1,11 +1,12 @@
 import os
 import io
 import pandas as pd
-from pydantic import BaseModel, field_validator, ValidationError
 from datetime import date, datetime
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
+from models import LabResult
+from pydantic import ValidationError
 
 # --- CONFIGURATION ---
 load_dotenv() # Loads .env or GitHub Secrets
@@ -23,20 +24,6 @@ blob_service = BlobServiceClient(ACCOUNT_URL, credential=credential)
 landing_client = blob_service.get_container_client("landing-zone")
 quarantine_client = blob_service.get_container_client("quarantine")
 data_client = blob_service.get_container_client("data")
-
-# --- PYDANTIC MODEL ---
-class LabResult(BaseModel):
-    sample_id: str
-    test_date: date
-    result: str
-    viral_load: int
-
-    @field_validator('result')
-    def check_result_code(cls, v):
-        allowed = ['POS', 'NEG', 'N/A']
-        if v not in allowed:
-            raise ValueError(f"Invalid result code: '{v}'. Must be POS, NEG, or N/A")
-        return v
 
 # --- HELPER: GET WEEK ---
 def get_partition_path(date_obj):
