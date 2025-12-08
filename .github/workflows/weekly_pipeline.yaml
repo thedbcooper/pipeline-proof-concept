@@ -2,35 +2,45 @@ name: Weekly Lab Pipeline
 
 on:
   schedule:
-    - cron: '0 12 * * 1' # Every Monday at Noon UTC
-  workflow_dispatch:      # Allows you to click "Run Now" button manually
+    - cron: '0 12 * * 1'
+  workflow_dispatch:
 
 jobs:
   run-pipeline:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write # Needed for Azure Login
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v3
 
-      - name: Azure Login (The Robot Badge)
-        uses: azure/login@v1
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          version: "latest"
 
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
       - name: Install Dependencies
-        run: pip install -r requirements.txt
+        # 'uv pip install' is the drop-in replacement for 'pip install'
+        # --system tells uv to install into the environment setup-python created
+        run: uv sync
 
-      - name: Run Pipeline Script
-        run: python 2_process_data.py
+      - name: Run Cloud Pipeline
         env:
-          # In the cloud, we swap local paths for Azure URLs
-          AZURE_STORAGE_ACCOUNT: "mylabstorage"
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        run: python 3_process_data_cloud.py
+
+      - name: (Optional) Generate CDC Report
+        if: success()
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+        run: python 5_export_report.py

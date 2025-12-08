@@ -12,7 +12,7 @@ blob_service = BlobServiceClient(f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 # Generate fake data
 df = pd.DataFrame({
     'sample_id': ['CLOUD-001', 'CLOUD-002'],
-    'test_date': ['2025-10-01', '2025-10-01'],
+    'test_date': ['2025-09-01', '2025-10-01'],
     'result': ['POS', 'Negative'], # One Valid, One Error (Negative != NEG)
     'viral_load': [500, 0]
 })
