@@ -33,8 +33,7 @@ def process_pipeline():
         'rows_quarantined': 0,
         'rows_inserted': 0,
         'rows_updated': 0,
-        'rows_deleted': 0,
-        'total_rows': 0
+        'rows_deleted': 0
     }
     
     # 1. LIST FILES
@@ -165,7 +164,6 @@ def process_pipeline():
                     log_entry['rows_deleted'] += rows_removed
                     print(f"   Removed {rows_removed} tombstoned row(s)")
             
-            log_entry['total_rows'] = len(final_df)
             print(f"   Uploading Parquet ({len(final_df)} rows)...")
             
             # Fix 2: Write to buffer, then upload bytes
@@ -181,7 +179,6 @@ def process_pipeline():
             
             # All rows in a new file are inserts
             log_entry['rows_inserted'] += len(final_batch)
-            log_entry['total_rows'] += len(final_batch)
             
             # Fix 2: Write to buffer, then upload bytes
             output_stream = io.BytesIO()

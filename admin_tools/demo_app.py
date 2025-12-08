@@ -32,6 +32,8 @@ if "staged_fixes" not in st.session_state:
     st.session_state.staged_fixes = []
 if "upload_counter" not in st.session_state:
     st.session_state.upload_counter = 0
+if "upload_success" not in st.session_state:
+    st.session_state.upload_success = False
 
 # ==========================================
 # ☁️ MOCK CLIENT INITIALIZATION
@@ -61,8 +63,7 @@ def run_mock_pipeline():
         'rows_quarantined': 0,
         'rows_inserted': 0,
         'rows_updated': 0,
-        'rows_deleted': 0,
-        'total_rows': 0
+        'rows_deleted': 0
     }
     
     log = []
@@ -190,7 +191,6 @@ def run_mock_pipeline():
         report_blob.upload_blob(csv_out, overwrite=True)
         
         rows_after = len(full_df)
-        metrics['total_rows'] = rows_after
         log.append(f"📊 Rows Before: {rows_before} -> Rows After: {rows_after}")
         log.append(f"✅ Report successfully updated!")
     elif not all_error_rows:
@@ -200,7 +200,7 @@ def run_mock_pipeline():
     _save_mock_execution_log(metrics)
     
     # Return log string with metrics appended
-    return "\n".join(log) + f"\n\nMETRICS|{metrics['files_processed']}|{metrics['rows_quarantined']}|{metrics['rows_inserted']}|{metrics['rows_updated']}|{metrics['rows_deleted']}|{metrics['total_rows']}"
+    return "\n".join(log) + f"\n\nMETRICS|{metrics['files_processed']}|{metrics['rows_quarantined']}|{metrics['rows_inserted']}|{metrics['rows_updated']}|{metrics['rows_deleted']}"
 
 def _save_mock_execution_log(metrics):
     """Save execution log to logs container."""
@@ -277,12 +277,12 @@ with st.sidebar:
                 # Parse the METRICS from the log (new format)
                 if "METRICS|" in result_log:
                     metrics_line = [l for l in result_log.split('\n') if 'METRICS|' in l][0]
-                    _, files_processed, rows_quarantined, rows_inserted, rows_updated, rows_deleted, total_rows = metrics_line.split('|')
+                    _, files_processed, rows_quarantined, rows_inserted, rows_updated, rows_deleted = metrics_line.split('|')
                     
                     # Display summary
                     st.success("✨ **Pipeline executed successfully!**")
                     
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
                         st.metric("Files Processed", files_processed)
                     with col2:
@@ -291,12 +291,8 @@ with st.sidebar:
                         st.metric("Rows Inserted", rows_inserted)
                     with col4:
                         st.metric("Rows Updated", rows_updated)
-                    
-                    col5, col6 = st.columns(2)
                     with col5:
                         st.metric("⚠️ Rows Deleted", rows_deleted, delta=None if rows_deleted == '0' else f"-{rows_deleted}", delta_color="inverse")
-                    with col6:
-                        st.metric("Total Rows", total_rows)
                     
                     if rows_deleted != '0':
                         st.warning(f"🗑️ **{rows_deleted} row(s) were permanently removed** due to sample_status='remove'")
@@ -433,11 +429,16 @@ elif page == "📤 Review & Upload":
                     progress_bar.progress(current_step / total_steps)
                 st.session_state.staged_fixes = []
             
-            st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar.")
-            
             # Increment counter to clear the uploader on rerun
             st.session_state.upload_counter += 1
+            st.session_state.upload_success = True
             st.rerun()
+    
+    # Show success message after rerun
+    if st.session_state.upload_success:
+        st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar.")
+        st.balloons()
+        st.session_state.upload_success = False
     
     st.divider()
     
@@ -667,7 +668,7 @@ elif page == "📈 Execution Logs":
                     latest = combined_logs.iloc[0]
                     
                     st.subheader("Latest Pipeline Run")
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     
                     with col1:
                         st.metric("Files Processed", int(latest['files_processed']))
@@ -677,12 +678,8 @@ elif page == "📈 Execution Logs":
                         st.metric("Rows Inserted", int(latest['rows_inserted']))
                     with col4:
                         st.metric("Rows Updated", int(latest['rows_updated']))
-                    
-                    col5, col6 = st.columns(2)
                     with col5:
                         st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
-                    with col6:
-                        st.metric("Total Rows", int(latest['total_rows']))
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
                 
@@ -704,8 +701,7 @@ elif page == "📈 Execution Logs":
                         "rows_quarantined": "Quarantined",
                         "rows_inserted": "Inserted",
                         "rows_updated": "Updated",
-                        "rows_deleted": "Deleted",
-                        "total_rows": "Total Rows"
+                        "rows_deleted": "Deleted"
                     }
                 )
                 

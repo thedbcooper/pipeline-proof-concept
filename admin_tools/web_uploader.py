@@ -67,6 +67,8 @@ if "staged_fixes" not in st.session_state:
     st.session_state.staged_fixes = []
 if "upload_counter" not in st.session_state:
     st.session_state.upload_counter = 0
+if "upload_success" not in st.session_state:
+    st.session_state.upload_success = False
 
 # --- AZURE CONNECTION ---
 @st.cache_resource
@@ -355,12 +357,16 @@ if page == "📤 Review & Upload":
                 
                 st.session_state.staged_fixes = []
             
-            st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar or wait for automatic runs.")
-            st.balloons()
-            
             # Increment counter to clear the uploader on rerun
             st.session_state.upload_counter += 1
+            st.session_state.upload_success = True
             st.rerun()
+    
+    # Show success message after rerun
+    if st.session_state.upload_success:
+        st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar or wait for automatic runs.")
+        st.balloons()
+        st.session_state.upload_success = False
     
     st.divider()
     
@@ -605,7 +611,7 @@ elif page == "📈 Execution Logs":
                     latest = combined_logs.iloc[0]
                     
                     st.subheader("Latest Pipeline Run")
-                    col1, col2, col3, col4 = st.columns(4)
+                    col1, col2, col3, col4, col5 = st.columns(5)
                     
                     with col1:
                         st.metric("Files Processed", int(latest['files_processed']))
@@ -615,12 +621,8 @@ elif page == "📈 Execution Logs":
                         st.metric("Rows Inserted", int(latest['rows_inserted']))
                     with col4:
                         st.metric("Rows Updated", int(latest['rows_updated']))
-                    
-                    col5, col6 = st.columns(2)
                     with col5:
                         st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
-                    with col6:
-                        st.metric("Total Rows", int(latest['total_rows']))
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
                 
@@ -642,8 +644,7 @@ elif page == "📈 Execution Logs":
                         "rows_quarantined": "Quarantined",
                         "rows_inserted": "Inserted",
                         "rows_updated": "Updated",
-                        "rows_deleted": "Deleted",
-                        "total_rows": "Total Rows"
+                        "rows_deleted": "Deleted"
                     }
                 )
                 
