@@ -89,6 +89,53 @@ Simply visit the **[Live App](https://public-health-data-agile-pipeline.streamli
 
 -----
 
+## 🚀 Deployment Prerequisites (Required for Real App & Pipeline)
+
+To run the full production pipeline, you must establish a secure connection between **Azure Storage** and **GitHub Actions**.
+
+### 1\. Azure Storage Setup 🟦
+
+Create a Storage Account and three private containers, which serve as the structure for your Data Lake:
+
+| Container Name | Purpose |
+| :--- | :--- |
+| **landing-zone** | Receives raw uploaded CSVs from the Admin Console. |
+| **quarantine** | Holds CSV files that failed Pydantic validation (for human review). |
+| **data** | Stores the finalized, cleaned data (Parquet/Master Report CSV). |
+
+### 2\. Generating Secrets (Service Principal) 🔑
+
+The GitHub Action needs a **Service Principal (SP)** to act as the "robot" with specific access rights. This is the most secure way to grant CI/CD access to your cloud resources.
+
+Run the Azure CLI command below to generate the necessary credentials:
+
+```bash
+az ad sp create-for-rbac \
+--name "GitHubPipelineRobot" \
+--role "Storage Blob Data Contributor" \
+--scopes /subscriptions/YOUR_SUBSCRIPTION_ID/resourceGroups/YOUR_RESOURCE_GROUP
+```
+
+This command will output three values that you must save:
+
+  * `appId` (This is your **AZURE\_CLIENT\_ID**)
+  * `password` (This is your **AZURE\_CLIENT\_SECRET**)
+  * `tenant` (This is your **AZURE\_TENANT\_ID**)
+
+### 3\. Adding Secrets to GitHub Actions 🐙
+
+Navigate to your repository settings on GitHub (`Settings` $\rightarrow$ `Secrets and variables` $\rightarrow$ `Actions`). Add the following repository secrets based on the values you generated above:
+
+| Secret Name | Source / Value | Used By |
+| :--- | :--- | :--- |
+| `AZURE_CLIENT_ID` | The `appId` value from the CLI. | Pipeline Robot, Local App |
+| `AZURE_CLIENT_SECRET` | The `password` value from the CLI. | Pipeline Robot, Local App |
+| `AZURE_TENANT_ID` | The `tenant` value from the CLI. | Pipeline Robot, Local App |
+| `AZURE_STORAGE_ACCOUNT` | Your storage account name (e.g., `labdata01`). | Pipeline Robot, Local App |
+| `GITHUB_TOKEN` | A Fine-Grained PAT with **actions:write** scope. | Sidebar Trigger Button |
+
+-----
+
 ### 👨‍💻 Created by Daniel Cooper
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/danielblakecooper/)
