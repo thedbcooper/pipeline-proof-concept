@@ -4,6 +4,8 @@
 # data files
 *.csv
 local_azure/
+temp_lakehouse/
+fix_me_please/
 
 # environment files
 .venv
