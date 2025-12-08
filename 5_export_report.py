@@ -4,39 +4,38 @@ import os
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 
+print("🚀 RUNNING SCRIPT VERSION: 4.0 (Legacy SET Method)")
+
 # Load credentials
 load_dotenv()
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 
-# Get the specific Service Principal secrets for DuckDB
 SP_CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
 SP_CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
 SP_TENANT_ID = os.getenv("AZURE_TENANT_ID")
 
-# --- 1. SETUP DUCKDB & AZURE CONNECTION ---
+# --- 1. SETUP DUCKDB (Legacy Mode) ---
 con = duckdb.connect()
 con.sql("INSTALL azure; LOAD azure;")
 
-# FIX: Use SERVICE_PRINCIPAL_SECRET instead of CREDENTIAL_CHAIN
-# We explicitly pass the secrets we already have in our environment.
-print("🔌 Configuring DuckDB with Service Principal...")
-con.sql(f"""
-    CREATE SECRET (
-        TYPE AZURE,
-        PROVIDER SERVICE_PRINCIPAL_SECRET,
-        TENANT_ID '{SP_TENANT_ID}',
-        CLIENT_ID '{SP_CLIENT_ID}',
-        CLIENT_SECRET '{SP_CLIENT_SECRET}',
-        ACCOUNT_NAME '{ACCOUNT_NAME}'
-    );
-""")
+print("🔌 Configuring DuckDB variables directly...")
+
+# Instead of CREATE SECRET, we set global configuration variables.
+# This works on almost all versions of the Azure extension.
+con.sql(f"SET azure_tenant_id = '{SP_TENANT_ID}';")
+con.sql(f"SET azure_client_id = '{SP_CLIENT_ID}';")
+con.sql(f"SET azure_client_secret = '{SP_CLIENT_SECRET}';")
+
+# FORCE DuckDB to use the Service Principal method (ignore CLI/Managed Identity)
+con.sql("SET azure_credential_chain = 'service_principal';")
 
 # --- 2. GENERATE CSV LOCALLY ---
 local_filename = "temp_cdc_export.csv"
 print(f"📦 Generating report locally: {local_filename}...")
 
-# Note: We added 'test_date DESC' to ensure the newest data is at the top
+# Run the query
+# Note: We don't need a secret name anymore; the global variables handle it.
 con.sql(f"""
     COPY (
         SELECT 
@@ -60,4 +59,4 @@ data_client = blob_service.get_container_client("data")
 with open(local_filename, "rb") as data:
     data_client.upload_blob(name=target_blob_name, data=data, overwrite=True)
 
-print("✅ Upload Complete! The file is ready in the root of your data container.")
+print("✅ Upload Complete!")
