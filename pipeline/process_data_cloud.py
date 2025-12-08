@@ -79,11 +79,11 @@ def process_pipeline():
                         
                         tombstone_record = {
                             'sample_id': row['sample_id'],
-                            'sample_status': 'remove',
                             'test_date': parsed_date,
                             # Add dummy values for other required fields
                             'result': 'N/A',
-                            'viral_load': 0
+                            'viral_load': 0,
+                            'sample_status': 'remove',
                         }
                         all_valid_rows.append(tombstone_record)
                     except (ValueError, KeyError) as e:
@@ -155,8 +155,11 @@ def process_pipeline():
             # Fix 1: Typo 'download_stream' vs 'downloaded_stream'
             history_df = pl.read_parquet(io.BytesIO(download_stream.readall()))
             
-            # Align column order - use new_batch_df column order as the standard
-            history_df = history_df.select(new_batch_df.columns)
+            # Ensure old parquet files have sample_status column (default to 'keep')
+            if 'sample_status' not in history_df.columns:
+                history_df = history_df.with_columns(
+                    pl.lit('keep').alias('sample_status')
+                )
             
             print("   Merging...")
             combined_df = pl.concat([history_df, new_batch_df])
