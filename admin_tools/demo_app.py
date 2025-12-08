@@ -439,13 +439,25 @@ elif page == "🛠️ Fix Quarantine":
             st.write("👇 **Double-click to edit:**")
             edited_df = st.data_editor(df, num_rows="dynamic", width="stretch")
 
-            if st.button("✅ Stage for Upload"):
-                clean_df = edited_df.drop(columns=["pipeline_error", "source_file"], errors='ignore')
-                st.session_state.staged_fixes.append({
-                    "original_name": sel, "dataframe": clean_df
-                })
-                st.toast("Moved to Upload Tab!")
-                st.rerun()
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Stage for Upload", use_container_width=True):
+                    clean_df = edited_df.drop(columns=["pipeline_error", "source_file"], errors='ignore')
+                    st.session_state.staged_fixes.append({
+                        "original_name": sel, "dataframe": clean_df
+                    })
+                    st.toast("Moved to Upload Tab!")
+                    st.rerun()
+            
+            with col2:
+                if st.button("🗑️ Delete File", type="secondary", use_container_width=True):
+                    try:
+                        client = quarantine_client.get_blob_client(sel)
+                        client.delete_blob()
+                        st.toast(f"Deleted `{sel}` from quarantine")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to delete: {e}")
 
 # ==========================================
 # PAGE 4: FINAL REPORT

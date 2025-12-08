@@ -393,18 +393,30 @@ elif page == "🛠️ Fix Quarantine":
             st.write("👇 **Double-click cells to edit:**")
             edited_df = st.data_editor(df, num_rows="dynamic", width="stretch", key=f"editor_{selected_file}")
 
-            if st.button("✅ Stage for Upload"):
-                cols_to_drop = ["pipeline_error", "source_file"]
-                final_df = edited_df.drop(columns=[c for c in cols_to_drop if c in edited_df.columns])
-                
-                st.session_state.staged_fixes.append({
-                    "original_name": selected_file,
-                    "dataframe": final_df,
-                    "status": "Ready"
-                })
-                
-                st.toast(f"Moved `{selected_file}` to Upload Tab!")
-                st.rerun()
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("✅ Stage for Upload", use_container_width=True):
+                    cols_to_drop = ["pipeline_error", "source_file"]
+                    final_df = edited_df.drop(columns=[c for c in cols_to_drop if c in edited_df.columns])
+                    
+                    st.session_state.staged_fixes.append({
+                        "original_name": selected_file,
+                        "dataframe": final_df,
+                        "status": "Ready"
+                    })
+                    
+                    st.toast(f"Moved `{selected_file}` to Upload Tab!")
+                    st.rerun()
+            
+            with col2:
+                if st.button("🗑️ Delete File", type="secondary", use_container_width=True):
+                    try:
+                        blob_client = quarantine_client.get_blob_client(selected_file)
+                        blob_client.delete_blob()
+                        st.toast(f"Deleted `{selected_file}` from quarantine")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to delete: {e}")
 
 # ==========================================
 # PAGE 4: FINAL REPORT
