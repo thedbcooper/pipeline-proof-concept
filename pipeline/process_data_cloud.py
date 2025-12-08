@@ -117,6 +117,11 @@ def process_pipeline():
     # --- 3. HANDLE GOOD DATA (Upsert to Parquet) ---
     full_df = pl.DataFrame(all_valid_rows)
 
+    # Convert test_date to Date type for partitioning
+    full_df = full_df.with_columns(
+        pl.col("test_date").str.to_date()
+    )
+
     # Create Partition Path
     full_df = full_df.with_columns(
         partition_path = pl.format("year={}/week={}", 
