@@ -89,7 +89,7 @@ def run_mock_pipeline():
 # ==========================================
 with st.sidebar:
     st.header("🧬 Lab Data Admin")
-    st.info("ℹ️ **DEMO MODE ACTIVE**\n\nThis app is running in a secure, isolated environment using dependency injection to simulate Azure Blob Storage.")
+    st.info("ℹ️ **DEMO MODE ACTIVE**\n\nThis app is running in an isolated environment. Changes will not affect any real data.")
 
     if st.button("🔄 Reset Demo Data"):
         reset_mock_cloud()
