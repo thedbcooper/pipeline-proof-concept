@@ -163,7 +163,7 @@ with st.sidebar:
     # NAVIGATION
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Review & Upload", "🛠️ Fix Quarantine", "📊 Final Report"],
+        ["🏠 Start Here", "📤 Review & Upload", "📦 Landing Zone", "🛠️ Fix Quarantine", "📊 Final Report"],
         key="nav_selection"
     )
     
@@ -171,11 +171,6 @@ with st.sidebar:
     st.subheader("🤖 Robot Controls")
     
     if st.button("▶️ Trigger Weekly Pipeline"):
-        # Clear the uploader if files were just uploaded
-        if st.session_state.get("just_uploaded", False):
-            st.session_state.upload_counter += 1
-            st.session_state.just_uploaded = False
-        
         with st.status("🤖 Robot Status", expanded=True) as status:
             st.write("Waking up...")
             time.sleep(1)
@@ -295,11 +290,6 @@ elif page == "📤 Review & Upload":
     
     if total_new + total_fixed > 0:
         if st.button(f"🚀 Upload All ({total_new + total_fixed} files)", type="primary"):
-            # Clear the uploader on next render
-            if st.session_state.get("just_uploaded", False):
-                st.session_state.upload_counter += 1
-                st.session_state.just_uploaded = False
-            
             progress_bar = st.progress(0)
             current_step = 0
             total_steps = total_new + total_fixed
@@ -326,8 +316,10 @@ elif page == "📤 Review & Upload":
                 st.session_state.staged_fixes = []
             
             st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar.")
-            # Mark that upload just completed
-            st.session_state.just_uploaded = True
+            
+            # Increment counter to clear the uploader on rerun
+            st.session_state.upload_counter += 1
+            st.rerun()
     
     st.divider()
     
@@ -372,7 +364,51 @@ elif page == "📤 Review & Upload":
         st.caption("Waiting for files...")
 
 # ==========================================
-# PAGE 2: FIX QUARANTINE
+# PAGE 2: LANDING ZONE PREVIEW
+# ==========================================
+elif page == "📦 Landing Zone":
+    st.title("📦 Landing Zone Preview")
+    st.caption("Files waiting to be processed by the pipeline")
+    
+    try:
+        blob_list = list(landing_client.list_blobs())
+        
+        if not blob_list:
+            st.info("📭 Landing Zone is empty. Upload files in the 'Review & Upload' tab.")
+        else:
+            st.success(f"Found {len(blob_list)} file(s) in the landing zone")
+            
+            # Show file list
+            st.subheader("Files in Queue")
+            for blob in blob_list:
+                st.text(f"📄 {blob.name}")
+            
+            st.divider()
+            
+            # File preview
+            if blob_list:
+                st.subheader("📋 File Preview")
+                selected_blob_name = st.selectbox(
+                    "Select file to preview:",
+                    [blob.name for blob in blob_list]
+                )
+                
+                if selected_blob_name:
+                    blob_client = landing_client.get_blob_client(selected_blob_name)
+                    try:
+                        data = blob_client.download_blob().readall()
+                        if isinstance(data, str): data = data.encode('utf-8')
+                        df_preview = pd.read_csv(io.BytesIO(data), nrows=10)
+                        st.caption(f"Showing first 10 rows of **{selected_blob_name}**")
+                        st.dataframe(df_preview, use_container_width=True)
+                    except Exception as e:
+                        st.error(f"Error reading file: {e}")
+    
+    except Exception as e:
+        st.error(f"Failed to access Landing Zone: {e}")
+
+# ==========================================
+# PAGE 3: FIX QUARANTINE
 # ==========================================
 elif page == "🛠️ Fix Quarantine":
     st.title("🛠️ Quarantine Manager")
@@ -412,7 +448,7 @@ elif page == "🛠️ Fix Quarantine":
                 st.rerun()
 
 # ==========================================
-# PAGE 3: FINAL REPORT
+# PAGE 4: FINAL REPORT
 # ==========================================
 elif page == "📊 Final Report":
     st.title("📊 CDC Final Export Review")
