@@ -68,20 +68,32 @@ def process_pipeline():
         for row in df.iter_rows(named=True):
             # Check if this is a tombstone record (skip full validation)
             if row.get('sample_status') == 'remove':
-                # For tombstone records, only need sample_id and sample_status
-                if 'sample_id' in row:
-                    tombstone_record = {
-                        'sample_id': row['sample_id'],
-                        'sample_status': 'remove',
-                        # Add dummy values for required fields to pass through the system
-                        'test_date': '2000-01-01',
-                        'result': 'N/A',
-                        'viral_load': 0
-                    }
-                    all_valid_rows.append(tombstone_record)
+                # For tombstone records, need sample_id, sample_status, and test_date
+                if 'sample_id' in row and 'test_date' in row:
+                    # Parse the test_date from string to date object
+                    try:
+                        if isinstance(row['test_date'], str):
+                            parsed_date = datetime.strptime(row['test_date'], '%Y-%m-%d').date()
+                        else:
+                            parsed_date = row['test_date']
+                        
+                        tombstone_record = {
+                            'sample_id': row['sample_id'],
+                            'sample_status': 'remove',
+                            'test_date': parsed_date,
+                            # Add dummy values for other required fields
+                            'result': 'N/A',
+                            'viral_load': 0
+                        }
+                        all_valid_rows.append(tombstone_record)
+                    except (ValueError, KeyError) as e:
+                        bad_row = row
+                        bad_row['pipeline_error'] = f"Tombstone record has invalid test_date: {e}"
+                        bad_row['source_file'] = blob.name
+                        all_error_rows.append(bad_row)
                 else:
                     bad_row = row
-                    bad_row['pipeline_error'] = "Tombstone record missing 'sample_id'"
+                    bad_row['pipeline_error'] = "Tombstone record missing required fields: 'sample_id' and 'test_date'"
                     bad_row['source_file'] = blob.name
                     all_error_rows.append(bad_row)
                 continue
@@ -117,11 +129,11 @@ def process_pipeline():
     # --- 3. HANDLE GOOD DATA (Upsert to Parquet) ---
     full_df = pl.DataFrame(all_valid_rows)
 
-    # Create Partition Path (parse test_date inline for partitioning)
+    # Create Partition Path
     full_df = full_df.with_columns(
         partition_path = pl.format("year={}/week={}", 
-                                   pl.col("test_date").str.to_date().dt.year(), 
-                                   pl.col("test_date").str.to_date().dt.week())
+                                   pl.col("test_date").dt.year(), 
+                                   pl.col("test_date").dt.week())
     )
 
     unique_partitions = full_df["partition_path"].unique().to_list()
