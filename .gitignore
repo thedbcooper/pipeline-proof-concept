@@ -3,6 +3,7 @@
 
 # data files
 *.csv
+local_azure/
 
 # environment files
 .venv
