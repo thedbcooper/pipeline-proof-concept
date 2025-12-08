@@ -178,7 +178,7 @@ if page == "🏠 Start Here":
     st.divider()
 
     # --- WORKFLOW 2: THE EXCEPTION PATH ---
-    st.subheader("🔴 Workflow B: Error Resolution")
+    st.subheader("🔴 Workflow B: Error Resolution (Start here for Demo)")
     st.caption("What happens when the robot rejects a file.")
 
     
