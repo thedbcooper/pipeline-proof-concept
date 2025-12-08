@@ -1,105 +1,116 @@
-# Serverless Lab Data Lakehouse (Agile Informatics)
+# 🧬 Public Health Data Pipeline (Agile Lakehouse)
 
-## 📋 Project Overview
+[](https://python.org)
+[](https://azure.microsoft.com)
+[](https://streamlit.io)
+[](https://pola.rs)
+[](https://www.google.com/search?q=https://docs.pydantic.dev/)
 
-This project implements a **Serverless Data Lakehouse** for automating the ingestion, validation, and reporting of public health laboratory data.
+An automated, serverless data pipeline designed to ingest, validate, and aggregate sensitive public health laboratory data. This project implements a **"Human-in-the-Loop"** architecture where invalid data is automatically quarantined, fixed via a UI, and re-injected into the pipeline without code changes.
 
-Unlike traditional "Schema-on-Write" relational databases (like SQL Server), this system utilizes an **Agile Informatics** approach. It decouples storage from compute, allowing for rapid iteration of data schemas and zero-cost maintenance during idle time.
+### 🎮 **[Live Portfolio Demo](https://public-health-data-agile-pipeline.streamlit.app/)**
 
-### Key Features
-
-  * **Zero-Cost Idle:** Uses Azure Blob Storage and GitHub Actions; costs are incurred only during the seconds of processing.
-  * **Time Travel:** Automatically partitions data by `year` and `week` based on sample dates, not upload dates.
-  * **Dead Letter Queue:** Robust "Human-in-the-Loop" workflow for repairing and re-ingesting bad data without stopping the pipeline.
-  * **Schema-on-Read:** Uses Pydantic for flexible, code-defined validation that is easier to update than database tables.
-
------
-
-## 🏗 Architecture
-
-1.  **Ingestion:** Lab results (CSV) arrive in **SharePoint**. Power Automate triggers and moves them to the Azure **Landing Zone**.
-2.  **Processing (The Robot):** A GitHub Action triggers `1_process_data_cloud.py`.
-      * Validates data using Pydantic models.
-      * **Pass:** Merges data into the **Data Lake** (Parquet/CSV partition folders).
-      * **Fail:** Offloads bad rows to the **Quarantine** container.
-3.  **Reporting:** `2_export_report.py` queries the Data Lake (using client-side pruning) to generate longitudinal datasets for the CDC/Dashboarding.
+> **Note:** This live demo runs in a secure "Sandbox Mode." It uses **Dependency Injection** to simulate Azure Blob Storage in-memory, ensuring no connection to real cloud infrastructure or sensitive data.
 
 -----
 
-## 🛠 Project Structure
+## 🏗️ Architecture
 
-This system is split into two logical domains to separate production automation from administrative tools.
-
-### 1\. The Production Pipeline (`/pipeline`)
-
-*Runs automatically via GitHub Actions.*
-
-  * `1_process_data_cloud.py`: The core ETL engine. Handles validation, deduplication, and upserting logic.
-  * `2_export_report.py`: Generates aggregate reports by pulling specific partitions from the lake.
-  * `models.py`: Shared Pydantic data definitions.
-  * `.github/workflows/weekly_pipeline.yaml`: The scheduler configuration.
-
-### 2\. Admin & Repair Tools (`/admin-tools`)
-
-*Runs manually on a local analyst machine.*
-
-  * `99_fetch_errors.py`: Downloads quarantined files for manual review.
-  * `6_reingest_fixed_data.py`: Pre-validates fixed files locally before pushing them back to the Landing Zone.
-  * `1_generate_mock_data.py`: Generates historical dummy data for stress testing.
+1.  **Landing Zone:** Partners upload raw CSVs via the Admin Console.
+2.  **The Robot (Pipeline):** A GitHub Action triggers the processing script.
+      * **Validation:** Uses `Pydantic` to enforce strict schema (e.g., `viral_load` must be int).
+      * **Routing:** Good data $\rightarrow$ Data Lake (Parquet). Bad data $\rightarrow$ Quarantine (CSV).
+3.  **Quarantine Loop:** Admins review rejected files in the Streamlit UI, fix errors (e.g., "Positive" $\rightarrow$ "POS"), and promote them back to the Landing Zone.
+4.  **Reporting:** Clean data is aggregated into a master CDC Export file.
 
 -----
 
-## 🚀 Usage Guide
+## 📂 Repository Structure
 
-### A. The Automated Workflow
-
-The pipeline runs automatically every **Monday at 12:00 UTC**.
-To trigger it manually:
-
-1.  Go to the **Actions** tab in GitHub.
-2.  Select **Weekly Lab Pipeline**.
-3.  Click **Run workflow**.
-
-### B. The "Dead Letter" Repair Loop
-
-When the pipeline detects validation errors (e.g., typos like "Positive" instead of "POS"), follow this process:
-
-1.  **Fetch:** Run the admin script to retrieve errors.
-    ```bash
-    python 99_fetch_errors.py
-    ```
-    *Files will appear in `fix_me_please/`.*
-2.  **Fix:** Open the CSV in Excel. Correct the data in the row. **Save.**
-3.  **Re-ingest:** Run the gatekeeper script.
-    ```bash
-    python 6_reingest_fixed_data.py
-    ```
-    *If the fix is valid, it automatically uploads to the Landing Zone and cleans up the Quarantine.*
-
------
-
-## ⚙️ Configuration
-
-To run these scripts locally, create a `.env` file in the root directory:
-
-```ini
-# Service Principal Credentials
-AZURE_CLIENT_ID=your-client-id
-AZURE_CLIENT_SECRET=your-client-secret
-AZURE_TENANT_ID=your-tenant-id
-
-# Storage Configuration
-AZURE_STORAGE_ACCOUNT=yourstorageaccountname
+```text
+.
+├── .github/workflows/
+│   └── weekly_pipeline.yaml      # The Cron Job (Monday 12:00 PM) & Manual Trigger
+├── admin_tools/
+│   ├── web_app.py                # 🔒 THE REAL APP (Local Production Admin Console)
+│   ├── demo_portfolio_app.py     # 🎮 THE DEMO APP (Public, Mock-Cloud version)
+│   └── mock_azure.py             # Cloud Emulation Logic (Interface Abstraction)
+├── pipeline/
+│   ├── process_data_cloud.py     # The Core ETL Logic (Polars + Pydantic)
+│   └── export_report.py          # Generates the final CDC aggregate report
+├── models.py                     # Pydantic Schema Definitions
+├── requirements.txt
+└── README.md
 ```
 
-**Note:** Never commit `.env` to GitHub. These secrets are managed via **GitHub Secrets** for the automated pipeline.
+-----
+
+## 🌟 Key Features
+
+### 1\. "Self-Healing" Data Quality
+
+Most pipelines crash on bad data. This one **side-steps** it.
+
+  * If a file contains `viral_load: "High"`, the pipeline **does not fail**.
+  * It moves that specific file to a `quarantine/` container and continues processing the rest.
+  * The Admin Console provides an Excel-like editor to fix the typo and retry.
+
+### 2\. High-Performance ETL
+
+  * **Polars:** Used for blazing-fast data manipulation (replacing Pandas).
+  * **Parquet:** Data is stored in compressed column-oriented format for efficiency.
+  * **Pydantic:** Enforces strict type checking before data ever touches the Lakehouse.
+
+### 3\. Secure Portfolio Deployment
+
+To share this project publicly without exposing Azure credentials, I implemented a **Cloud Emulation Pattern**:
+
+  * **Interface Abstraction:** Created a `MockContainerClient` class that mirrors the official Azure SDK methods (`upload_blob`, `download_blob`, `list_blobs`).
+  * **Dependency Injection:** The Demo App injects these mock clients instead of real Azure clients, allowing the full UI workflow to run entirely in the browser's memory.
 
 -----
 
-## 🧠 Why "Agile Informatics"?
+## 🚀 How to Run
 
-This architecture was chosen to solve specific challenges in public health surveillance:
+### Option A: The Portfolio Demo (Browser)
 
-1.  **Velocity vs. Perfection:** We prioritize the ability to ingest new data types immediately over strict database constraints.
-2.  **Resilience:** If one file is corrupt, it is quarantined. The rest of the pipeline continues. In a traditional database pipeline, a single schema error often halts the entire batch.
-3.  **Portability:** The data lives in open formats (CSV/Parquet). It can be consumed by Python, R, PowerBI, or Tableau without needing a JDBC driver or VPN connection.
+Simply visit the **[Live App](https://public-health-data-agile-pipeline.streamlit.app/)**. No setup required.
+
+### Option B: The Real Production App (Local)
+
+*Note: Requires active Azure Credentials in `.env`*
+
+1.  **Clone the repo:**
+    ```bash
+    git clone https://github.com/yourusername/lab-data-pipeline.git
+    cd lab-data-pipeline
+    ```
+2.  **Install dependencies:**
+    ```bash
+    uv sync  # Or pip install -r requirements.txt
+    ```
+3.  **Run the Admin Console:**
+    ```bash
+    uv run streamlit run admin_tools/web_app.py
+    ```
+4.  **Trigger the Pipeline:**
+    Click the "Trigger Weekly Pipeline" button in the sidebar (requires GitHub Token).
+
+-----
+
+## 🛡️ Security & Design Decisions
+
+  * **Local-First Admin:** The production Admin Console (`web_app.py`) is designed to run on a secure internal network or VPN, not on the public internet.
+  * **Secrets Management:** Uses `python-dotenv` for local development and GitHub Secrets for CI/CD.
+  * **Role-Based Access (RBAC):** The pipeline uses a specialized Azure Service Principal with `Storage Blob Data Contributor` scope, adhering to the Principle of Least Privilege.
+
+-----
+
+---
+
+### 👨‍💻 Created by Daniel Cooper
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/danielblakecooper/)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/thedbcooper)
+
+*Epidemiologist & Analytics Engineer*
