@@ -1,0 +1,13 @@
+[project]
+name = "pipeline-proof-concept"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "azure-identity>=1.25.1",
+    "azure-storage-blob>=12.27.1",
+    "duckdb>=1.4.2",
+    "pandas>=2.3.3",
+    "pydantic>=2.12.5",
+]
