@@ -117,11 +117,11 @@ def process_pipeline():
     # --- 3. HANDLE GOOD DATA (Upsert to Parquet) ---
     full_df = pl.DataFrame(all_valid_rows)
 
-    # Create Partition Path
+    # Create Partition Path (parse test_date inline for partitioning)
     full_df = full_df.with_columns(
         partition_path = pl.format("year={}/week={}", 
-                                   pl.col("test_date").dt.year(), 
-                                   pl.col("test_date").dt.week())
+                                   pl.col("test_date").str.to_date().dt.year(), 
+                                   pl.col("test_date").str.to_date().dt.week())
     )
 
     unique_partitions = full_df["partition_path"].unique().to_list()
