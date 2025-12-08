@@ -1,33 +1,35 @@
 import duckdb
 import os
+import certifi  # <--- NEW IMPORT
 from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 
-print("🚀 RUNNING SCRIPT VERSION: 7.0 (Bearer Token Bridge)")
+print("🚀 RUNNING SCRIPT VERSION: 8.0 (SSL Certificate Fix)")
 
 # Load credentials
 load_dotenv()
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 
-# --- 1. GET TOKEN VIA PYTHON (The Bridge) ---
+# --- 1. GET TOKEN VIA PYTHON ---
 print("🔑 Requesting Azure Access Token via Python...")
 credential = DefaultAzureCredential()
-
-# We ask for a token specifically for Storage
-# This returns a temporary string (like a Session ID)
 token_object = credential.get_token("https://storage.azure.com/.default")
 access_token = token_object.token
 
 # --- 2. CONFIGURE DUCKDB ---
 con = duckdb.connect()
 con.sql("INSTALL azure; LOAD azure;")
+con.sql("INSTALL httpfs; LOAD httpfs;") # Explicitly load httpfs just in case
+
+print(f"🔌 Pointing DuckDB to SSL Bundle: {certifi.where()}")
+
+# FIX: Tell DuckDB exactly where the SSL certificates are
+# This solves the "Problem with the SSL CA cert" error
+con.sql(f"SET http_ca_file = '{certifi.where()}';")
 
 print("🔌 Passing Access Token to DuckDB...")
-
-# We use the ACCESS_TOKEN provider. 
-# This tells DuckDB: "Don't try to log in, just use this active token."
 con.sql(f"""
     CREATE SECRET my_azure_secret (
         TYPE AZURE,
@@ -41,9 +43,6 @@ con.sql(f"""
 local_filename = "temp_cdc_export.csv"
 print(f"📦 Generating report locally: {local_filename}...")
 
-# BENEFIT: This query runs IN THE CLOUD (mostly).
-# DuckDB only downloads the headers first, then streams the data.
-# Partition Pruning: If we added "WHERE year='2025'", it would ignore other folders!
 con.sql(f"""
     COPY (
         SELECT 
