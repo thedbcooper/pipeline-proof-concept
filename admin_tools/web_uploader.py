@@ -1,6 +1,7 @@
 import streamlit as st
 import os
 import io
+import requests
 import pandas as pd
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
@@ -10,15 +11,20 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Lab Data Admin", layout="wide")
 load_dotenv()
 
+# Azure Config
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 
-# --- SESSION STATE SETUP ---
-# This acts as our "Shopping Cart" for fixed files
+# GitHub Config (For the Trigger Button)
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
+REPO_OWNER = os.getenv("REPO_OWNER")
+REPO_NAME = os.getenv("REPO_NAME")
+
+# --- SESSION STATE ---
 if "staged_fixes" not in st.session_state:
     st.session_state.staged_fixes = []
 
-# --- AZURE CONNECTION HELPER ---
+# --- AZURE CONNECTION ---
 @st.cache_resource
 def get_blob_service():
     credential = DefaultAzureCredential()
@@ -28,10 +34,41 @@ blob_service = get_blob_service()
 landing_client = blob_service.get_container_client("landing-zone")
 quarantine_client = blob_service.get_container_client("quarantine")
 
-st.title("🧬 Lab Data Admin Console")
-st.caption(f"Connected to: `{ACCOUNT_NAME}`")
+# --- SIDEBAR: MISSION CONTROL ---
+with st.sidebar:
+    st.header("🎮 Mission Control")
+    st.caption(f"Storage: `{ACCOUNT_NAME}`")
+    
+    st.divider()
+    st.subheader("Cloud Pipeline")
+    
+    if st.button("▶️ Trigger Weekly Pipeline"):
+        if not GITHUB_TOKEN or not REPO_OWNER:
+            st.error("❌ Missing GitHub credentials in .env")
+        else:
+            with st.spinner("Waking up the robot..."):
+                url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/dispatches"
+                headers = {
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                data = {"ref": "main"} # Target the main branch
 
-# --- TABS ---
+                try:
+                    response = requests.post(url, json=data, headers=headers)
+                    if response.status_code == 204:
+                        st.success("✅ Signal sent!")
+                        st.markdown(f"👉 [Watch Progress](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
+                    else:
+                        st.error(f"❌ Failed: {response.status_code}")
+                        st.caption(response.text)
+                except Exception as e:
+                    st.error(f"Connection Error: {e}")
+
+# --- MAIN APP ---
+st.title("🧬 Lab Data Admin Console")
+
+# TABS
 tab_upload, tab_fix = st.tabs(["📤 Review & Upload", "🛠️ Fix Quarantine"])
 
 # ==========================================
@@ -43,13 +80,13 @@ with tab_fix:
     # 1. List Files
     blob_list = list(quarantine_client.list_blobs())
     
-    # Filter out files we have already staged (so you don't fix them twice)
+    # Filter out files we have already staged
     staged_names = [item['original_name'] for item in st.session_state.staged_fixes]
     remaining_blobs = [b.name for b in blob_list if b.name not in staged_names]
     
     if not remaining_blobs:
         if staged_names:
-            st.info("⚠️ You have files staged in the Upload tab! Go there to finish.")
+            st.info("⚠️ Files are staged in the Upload tab! Go there to finish.")
         else:
             st.success("🎉 Quarantine is empty!")
     else:
@@ -59,24 +96,24 @@ with tab_fix:
             # 2. Download
             blob_client = quarantine_client.get_blob_client(selected_file)
             stream = blob_client.download_blob().readall()
+            # Read as String to preserve "00123" IDs
             df = pd.read_csv(io.BytesIO(stream), dtype=str)
 
-            # Show Error
             if "pipeline_error" in df.columns:
                 unique_errors = df["pipeline_error"].unique()
-                st.warning(f"Errors: {', '.join(str(e) for e in unique_errors)}")
+                st.warning(f"Reported Errors: {', '.join(str(e) for e in unique_errors)}")
 
             # 3. Editor
-            st.write("👇 **Edit Data:**")
+            st.write("👇 **Double-click cells to edit:**")
             edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
-            # 4. "Stage" Button
+            # 4. Stage Button
             if st.button("✅ Stage for Upload"):
                 # Clean columns
                 cols_to_drop = ["pipeline_error", "source_file"]
                 final_df = edited_df.drop(columns=[c for c in cols_to_drop if c in edited_df.columns])
                 
-                # Add to Session State (The "Shopping Cart")
+                # Add to Session State
                 st.session_state.staged_fixes.append({
                     "original_name": selected_file,
                     "dataframe": final_df,
@@ -101,7 +138,7 @@ with tab_upload:
     with col2:
         st.subheader("2. Fixed Files (From Quarantine)")
         if st.session_state.staged_fixes:
-            for i, item in enumerate(st.session_state.staged_fixes):
+            for item in st.session_state.staged_fixes:
                 st.text(f"📄 {item['original_name']} ({len(item['dataframe'])} rows)")
         else:
             st.info("No fixed files waiting.")
@@ -142,7 +179,7 @@ with tab_upload:
                         landing_client.upload_blob(name=fname, data=csv_buffer, overwrite=True)
                         st.write(f"✅ Promoted `{fname}`")
                         
-                        # 2. Delete from Quarantine (ONLY happens if upload succeeds)
+                        # 2. Delete from Quarantine
                         q_blob = quarantine_client.get_blob_client(fname)
                         q_blob.delete_blob()
                         
@@ -152,11 +189,11 @@ with tab_upload:
                     current_step += 1
                     progress_bar.progress(current_step / total_steps)
                 
-                # Clear the "Shopping Cart"
+                # Clear Shopping Cart
                 st.session_state.staged_fixes = []
             
             st.success("✨ All operations complete!")
             st.balloons()
             
     else:
-        st.write("waiting for files...")
+        st.caption("Waiting for files to process...")
