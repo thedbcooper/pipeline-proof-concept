@@ -1,16 +1,16 @@
 # 🧬 Public Health Data Pipeline (Agile Lakehouse)
 
-[](https://python.org)
-[](https://azure.microsoft.com)
-[](https://streamlit.io)
-[](https://pola.rs)
-[](https://www.google.com/search?q=https://docs.pydantic.dev/)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)](https://www.python.org)
+[![Azure](https://img.shields.io/badge/Cloud-Azure%20Blob-0078D4?logo=microsoft-azure&logoColor=white)](https://azure.microsoft.com)
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io)
+[![Polars](https://img.shields.io/badge/Data-Polars-CD792C?logo=polars)](https://pola.rs)
+[![Pydantic](https://img.shields.io/badge/Validation-Pydantic-E92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
 
 An automated, serverless data pipeline designed to ingest, validate, and aggregate sensitive public health laboratory data. This project implements a **"Human-in-the-Loop"** architecture where invalid data is automatically quarantined, fixed via a UI, and re-injected into the pipeline without code changes.
 
 ### 🎮 **[Live Portfolio Demo](https://public-health-data-agile-pipeline.streamlit.app/)**
 
-> **Note:** This live demo runs in a secure "Sandbox Mode." It uses **Dependency Injection** to simulate Azure Blob Storage in-memory, ensuring no connection to real cloud infrastructure or sensitive data.
+> **Note to Viewer:** The "Real App" runs locally and is not deployed. This live demo uses **Interface Abstraction** to simulate Azure Blob Storage in memory, ensuring no connection to real cloud infrastructure.
 
 -----
 
@@ -27,19 +27,21 @@ An automated, serverless data pipeline designed to ingest, validate, and aggrega
 
 ## 📂 Repository Structure
 
+Based on your file directory:
+
 ```text
 .
 ├── .github/workflows/
-│   └── weekly_pipeline.yaml      # The Cron Job (Monday 12:00 PM) & Manual Trigger
+│   └── weekly_pipeline.yaml      # The Cron Job (Production Automation)
 ├── admin_tools/
-│   ├── web_app.py                # 🔒 THE REAL APP (Local Production Admin Console)
-│   ├── demo_portfolio_app.py     # 🎮 THE DEMO APP (Public, Mock-Cloud version)
-│   └── mock_azure.py             # Cloud Emulation Logic (Interface Abstraction)
+│   ├── demo_app.py               # 🎮 THE DEMO APP (Public Portfolio Frontend)
+│   ├── generate_and_upload_mock_data.py
+│   ├── mock_azure.py             # Cloud Emulation Logic
+│   └── web_uploader.py           # 🔒 THE REAL APP (Local Production Admin Console)
 ├── pipeline/
 │   ├── process_data_cloud.py     # The Core ETL Logic (Polars + Pydantic)
 │   └── export_report.py          # Generates the final CDC aggregate report
 ├── models.py                     # Pydantic Schema Definitions
-├── requirements.txt
 └── README.md
 ```
 
@@ -51,22 +53,16 @@ An automated, serverless data pipeline designed to ingest, validate, and aggrega
 
 Most pipelines crash on bad data. This one **side-steps** it.
 
-  * If a file contains `viral_load: "High"`, the pipeline **does not fail**.
-  * It moves that specific file to a `quarantine/` container and continues processing the rest.
-  * The Admin Console provides an Excel-like editor to fix the typo and retry.
+  * **Polars + Pydantic:** Used for fast validation and data integrity.
+  * **Quarantine:** Invalid files move to `quarantine/` and wait for human review.
+  * **Human-in-the-Loop:** The Admin Console provides an Excel-like editor to fix the typo and retry.
 
-### 2\. High-Performance ETL
+### 2\. Cloud Abstraction (Security Highlight)
 
-  * **Polars:** Used for blazing-fast data manipulation (replacing Pandas).
-  * **Parquet:** Data is stored in compressed column-oriented format for efficiency.
-  * **Pydantic:** Enforces strict type checking before data ever touches the Lakehouse.
+To share this project publicly without exposing Azure credentials, I implemented a **Mock Object Pattern**:
 
-### 3\. Secure Portfolio Deployment
-
-To share this project publicly without exposing Azure credentials, I implemented a **Cloud Emulation Pattern**:
-
-  * **Interface Abstraction:** Created a `MockContainerClient` class that mirrors the official Azure SDK methods (`upload_blob`, `download_blob`, `list_blobs`).
-  * **Dependency Injection:** The Demo App injects these mock clients instead of real Azure clients, allowing the full UI workflow to run entirely in the browser's memory.
+  * **Interface Abstraction:** The `mock_azure.py` class perfectly mirrors the official Azure SDK methods (`upload_blob`, `download_blob`, `list_blobs`).
+  * **Safety:** The Demo App injects these mock clients instead of real Azure clients, ensuring the full UI workflow runs safely in the browser's memory.
 
 -----
 
@@ -80,37 +76,23 @@ Simply visit the **[Live App](https://public-health-data-agile-pipeline.streamli
 
 *Note: Requires active Azure Credentials in `.env`*
 
-1.  **Clone the repo:**
+1.  **Install dependencies:**
     ```bash
-    git clone https://github.com/yourusername/lab-data-pipeline.git
-    cd lab-data-pipeline
+    uv sync
     ```
-2.  **Install dependencies:**
+2.  **Run the Admin Console:**
     ```bash
-    uv sync  # Or pip install -r requirements.txt
+    uv run streamlit run admin_tools/web_uploader.py
     ```
-3.  **Run the Admin Console:**
-    ```bash
-    uv run streamlit run admin_tools/web_app.py
-    ```
-4.  **Trigger the Pipeline:**
-    Click the "Trigger Weekly Pipeline" button in the sidebar (requires GitHub Token).
+3.  **Trigger the Pipeline:**
+    Click the "Trigger Weekly Pipeline" button in the sidebar (requires GitHub Token) to process the files you upload.
 
 -----
-
-## 🛡️ Security & Design Decisions
-
-  * **Local-First Admin:** The production Admin Console (`web_app.py`) is designed to run on a secure internal network or VPN, not on the public internet.
-  * **Secrets Management:** Uses `python-dotenv` for local development and GitHub Secrets for CI/CD.
-  * **Role-Based Access (RBAC):** The pipeline uses a specialized Azure Service Principal with `Storage Blob Data Contributor` scope, adhering to the Principle of Least Privilege.
-
------
-
----
 
 ### 👨‍💻 Created by Daniel Cooper
 
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0077B5?style=for-the-badge&logo=linkedin&logoColor=white)](https://www.linkedin.com/in/danielblakecooper/)
 [![GitHub](https://img.shields.io/badge/GitHub-Follow-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/thedbcooper)
+[![ORCID](https://img.shields.io/badge/ORCID-0000--0002--2218--7916-A6CE39?style=for-the-badge&logo=orcid&logoColor=white)](https://orcid.org/0000-0002-2218-7916)
 
 *Epidemiologist & Analytics Engineer*
