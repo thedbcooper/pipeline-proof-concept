@@ -11,6 +11,50 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Lab Data Admin", layout="wide")
 load_dotenv()
 
+# ==========================================
+# 🔒 SECURITY GATE
+# ==========================================
+def check_password():
+    """Returns `True` if the user had the correct password."""
+    
+    # 1. Check Session State (Already logged in?)
+    if st.session_state.get("password_correct", False):
+        return True
+
+    # 2. Get the Secret Password (Supports Local .env OR Cloud Secrets)
+    # Priority: Streamlit Secrets -> Environment Variable -> Default
+    try:
+        stored_password = st.secrets["ADMIN_PASSWORD"]
+    except (FileNotFoundError, KeyError):
+        stored_password = os.getenv("ADMIN_PASSWORD")
+
+    if not stored_password:
+        st.error("⚠️ Server Configuration Error: ADMIN_PASSWORD not set.")
+        st.stop()
+
+    # 3. Show Login Form
+    st.header("🔒 Admin Access Required")
+    st.write("Please log in to manage the Lab Data Pipeline.")
+    
+    input_password = st.text_input("Enter Admin Password", type="password")
+    
+    if st.button("Log In"):
+        if input_password == stored_password:
+            st.session_state.password_correct = True
+            st.rerun() # Refresh to show the app
+        else:
+            st.error("❌ Incorrect Password")
+            
+    return False
+
+# 🛑 STOP HERE if not logged in
+if not check_password():
+    st.stop()
+
+# ==========================================
+# 🚀 MAIN APP (Only runs after Login)
+# ==========================================
+
 # Azure Config
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
@@ -28,10 +72,14 @@ def get_blob_service():
     credential = DefaultAzureCredential()
     return BlobServiceClient(ACCOUNT_URL, credential=credential)
 
-blob_service = get_blob_service()
-landing_client = blob_service.get_container_client("landing-zone")
-quarantine_client = blob_service.get_container_client("quarantine")
-data_client = blob_service.get_container_client("data")
+try:
+    blob_service = get_blob_service()
+    landing_client = blob_service.get_container_client("landing-zone")
+    quarantine_client = blob_service.get_container_client("quarantine")
+    data_client = blob_service.get_container_client("data")
+except Exception as e:
+    st.error(f"Failed to connect to Azure: {e}")
+    st.stop()
 
 # ==========================================
 # SIDEBAR: NAVIGATION & CONTROLS
@@ -68,6 +116,12 @@ with st.sidebar:
                         st.caption(response.text)
                 except Exception as e:
                     st.error(f"Connection Error: {e}")
+                    
+    # LOGOUT BUTTON
+    st.divider()
+    if st.button("Log Out"):
+        st.session_state.password_correct = False
+        st.rerun()
 
 # ==========================================
 # PAGE 1: UPLOAD (Final Review)
@@ -167,8 +221,6 @@ elif page == "🛠️ Fix Quarantine":
                 st.warning(f"Reported Errors: {', '.join(str(e) for e in unique_errors)}")
 
             st.write("👇 **Double-click cells to edit:**")
-            
-            # CHANGE: Replaced use_container_width=True with width="stretch"
             edited_df = st.data_editor(df, num_rows="dynamic", width="stretch")
 
             if st.button("✅ Stage for Upload"):
@@ -226,8 +278,6 @@ elif page == "📊 Final Report":
         if "preview_df" in st.session_state:
             st.divider()
             st.subheader("Data Preview")
-            
-            # CHANGE: Replaced use_container_width=True with width="stretch"
             st.dataframe(st.session_state.preview_df, width="stretch")
             st.caption(f"Showing first {len(st.session_state.preview_df)} rows.")
 
