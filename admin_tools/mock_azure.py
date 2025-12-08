@@ -9,7 +9,7 @@ INITIAL_STATE = {
         "quarantine_demo.csv": (
             b"sample_id,test_date,result,viral_load,pipeline_error,source_file\n"
             # CHANGE: ID is now TEST-999 to avoid collision with History
-            b"TEST-999,2025-12-05,Positive,8000,\"Value error, Invalid result code...\",demo_upload.csv"
+            b"TEST-999,2025-12-05,Positive,8000,\"result Value error, Invalid result code: Must be POS, NEG, or N/A\",demo_upload.csv"
         )
     },
     "data": {

@@ -65,6 +65,8 @@ REPO_NAME = os.getenv("REPO_NAME")
 # --- SESSION STATE ---
 if "staged_fixes" not in st.session_state:
     st.session_state.staged_fixes = []
+if "upload_counter" not in st.session_state:
+    st.session_state.upload_counter = 0
 
 # --- AZURE CONNECTION ---
 @st.cache_resource
@@ -98,6 +100,11 @@ with st.sidebar:
     st.subheader("🤖 Robot Controls")
     
     if st.button("▶️ Trigger Weekly Pipeline"):
+        # Clear the uploader if files were just uploaded
+        if st.session_state.get("just_uploaded", False):
+            st.session_state.upload_counter += 1
+            st.session_state.just_uploaded = False
+        
         if not GITHUB_TOKEN or not REPO_OWNER:
             st.error("❌ Missing GitHub credentials in .env")
         else:
@@ -204,7 +211,12 @@ if page == "📤 Review & Upload":
     
     with col1:
         st.subheader("1. New Files (From Disk)")
-        uploaded_files = st.file_uploader("Drag & Drop CSVs", type="csv", accept_multiple_files=True)
+        uploaded_files = st.file_uploader(
+            "Drag & Drop CSVs", 
+            type="csv", 
+            accept_multiple_files=True,
+            key=f"file_uploader_{st.session_state.upload_counter}"
+        )
 
     with col2:
         st.subheader("2. Fixed Files (From Quarantine)")
@@ -216,11 +228,17 @@ if page == "📤 Review & Upload":
 
     st.divider()
     
+    # UPLOAD BUTTON AT TOP
     total_new = len(uploaded_files) if uploaded_files else 0
     total_fixed = len(st.session_state.staged_fixes)
     
     if total_new + total_fixed > 0:
-        if st.button(f"🚀 Upload All ({total_new + total_fixed} files) to Cloud"):
+        if st.button(f"🚀 Upload All ({total_new + total_fixed} files) to Cloud", type="primary"):
+            # Clear the uploader on next render
+            if st.session_state.get("just_uploaded", False):
+                st.session_state.upload_counter += 1
+                st.session_state.just_uploaded = False
+            
             progress_bar = st.progress(0)
             current_step = 0
             total_steps = total_new + total_fixed
@@ -261,8 +279,49 @@ if page == "📤 Review & Upload":
             
             st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar or wait for automatic runs.")
             st.balloons()
+            # Mark that upload just completed
+            st.session_state.just_uploaded = True
+    
+    st.divider()
+    
+    # PREVIEW SECTION
+    preview_options = []
+    
+    # Add new files to preview options
+    if uploaded_files:
+        for f in uploaded_files:
+            preview_options.append(("New: " + f.name, f))
+    
+    # Add fixed files to preview options
+    if st.session_state.staged_fixes:
+        for item in st.session_state.staged_fixes:
+            preview_options.append(("Fixed: " + item['original_name'], item['dataframe']))
+    
+    if preview_options:
+        st.subheader("📋 File Preview")
+        preview_choice = st.selectbox(
+            "Select file to preview:", 
+            [opt[0] for opt in preview_options]
+        )
+        
+        if preview_choice:
+            # Find the selected file
+            selected_data = next(opt[1] for opt in preview_options if opt[0] == preview_choice)
+            
+            try:
+                if isinstance(selected_data, pd.DataFrame):
+                    # It's a fixed file (already a DataFrame)
+                    df_preview = selected_data.head(10)
+                else:
+                    # It's a new file (file object)
+                    df_preview = pd.read_csv(selected_data, nrows=10)
+                
+                st.caption(f"Showing first 10 rows of **{preview_choice}**")
+                st.dataframe(df_preview, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
     else:
-        st.caption("Waiting for files to process...")
+        st.caption("Waiting for files...")
 
 # ==========================================
 # PAGE 2: FIX QUARANTINE
@@ -280,7 +339,12 @@ elif page == "🛠️ Fix Quarantine":
         else:
             st.success("🎉 Quarantine is empty!")
     else:
-        selected_file = st.selectbox("Select a file to fix:", remaining_blobs)
+        selected_file = st.selectbox(
+            "Select a file to fix:", 
+            remaining_blobs,
+            index=0,
+            key=f"quarantine_selector_{len(staged_names)}"
+        )
 
         if selected_file:
             blob_client = quarantine_client.get_blob_client(selected_file)
@@ -292,7 +356,7 @@ elif page == "🛠️ Fix Quarantine":
                 st.warning(f"Reported Errors: {', '.join(str(e) for e in unique_errors)}")
 
             st.write("👇 **Double-click cells to edit:**")
-            edited_df = st.data_editor(df, num_rows="dynamic", width="stretch")
+            edited_df = st.data_editor(df, num_rows="dynamic", width="stretch", key=f"editor_{selected_file}")
 
             if st.button("✅ Stage for Upload"):
                 cols_to_drop = ["pipeline_error", "source_file"]

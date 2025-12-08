@@ -10,6 +10,18 @@ except ImportError:
     st.error("Missing 'mock_azure.py'. This file is required for the demo.")
     st.stop()
 
+# Import Pydantic model
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+try:
+    from models import LabResult
+    from pydantic import ValidationError
+except ImportError:
+    st.error("Missing 'models.py'. This file is required for validation.")
+    st.stop()
+
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Lab Data Admin (Portfolio Demo)", layout="wide")
 
@@ -18,6 +30,8 @@ st.set_page_config(page_title="Lab Data Admin (Portfolio Demo)", layout="wide")
 # ==========================================
 if "staged_fixes" not in st.session_state:
     st.session_state.staged_fixes = []
+if "upload_counter" not in st.session_state:
+    st.session_state.upload_counter = 0
 
 # ==========================================
 # ☁️ MOCK CLIENT INITIALIZATION
@@ -53,7 +67,8 @@ def run_mock_pipeline():
     rows_before = len(history_df)
     log.append(f"History contains {rows_before} rows.")
 
-    new_data_frames = []
+    all_valid_rows = []
+    all_error_rows = []
     
     for blob_prop in blobs:
         b_client = landing_client.get_blob_client(blob_prop.name)
@@ -61,14 +76,50 @@ def run_mock_pipeline():
         try:
             if isinstance(data, str): data = data.encode('utf-8')
             df = pd.read_csv(io.BytesIO(data), dtype=str)
-            new_data_frames.append(df)
+            
+            # VALIDATE EACH ROW
+            valid_count = 0
+            error_count = 0
+            
+            for index, row in df.iterrows():
+                try:
+                    # Pydantic validation
+                    valid_sample = LabResult(**row.to_dict())
+                    all_valid_rows.append(valid_sample.model_dump())
+                    valid_count += 1
+                except ValidationError as e:
+                    bad_row = row.to_dict()
+                    bad_row['pipeline_error'] = str(e)
+                    bad_row['source_file'] = blob_prop.name
+                    all_error_rows.append(bad_row)
+                    error_count += 1
+            
+            # Delete processed file
             b_client.delete_blob()
-            log.append(f"✅ Processed & Deleted: {blob_prop.name}")
+            log.append(f"✅ Processed & Deleted: {blob_prop.name} ({valid_count} valid, {error_count} errors)")
+            
         except Exception as e:
             log.append(f"❌ CRITICAL ERROR reading {blob_prop.name}: {e}")
 
-    if new_data_frames:
-        new_batch = pd.concat(new_data_frames)
+    # Handle bad data - upload to quarantine
+    if all_error_rows:
+        from datetime import datetime
+        error_df = pd.DataFrame(all_error_rows)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"quarantine_{timestamp}.csv"
+        
+        csv_buffer = error_df.to_csv(index=False).encode('utf-8')
+        quarantine_client.upload_blob(filename, csv_buffer, overwrite=True)
+        log.append(f"⚠️ Quarantined {len(all_error_rows)} rows to {filename}")
+
+    # Handle good data - upsert into report
+    if all_valid_rows:
+        new_batch = pd.DataFrame(all_valid_rows)
+        
+        # Convert test_date to string for consistency before merging
+        if "test_date" in new_batch.columns:
+            new_batch["test_date"] = new_batch["test_date"].astype(str)
+        
         full_df = pd.concat([history_df, new_batch])
         full_df = full_df.drop_duplicates(subset=["sample_id"], keep="last")
         
@@ -81,6 +132,8 @@ def run_mock_pipeline():
         rows_after = len(full_df)
         log.append(f"📊 Rows Before: {rows_before} -> Rows After: {rows_after}")
         log.append(f"✅ Report successfully updated!")
+    elif not all_error_rows:
+        log.append("⚠️ No valid data to process.")
     
     return "\n".join(log)
 
@@ -118,6 +171,11 @@ with st.sidebar:
     st.subheader("🤖 Robot Controls")
     
     if st.button("▶️ Trigger Weekly Pipeline"):
+        # Clear the uploader if files were just uploaded
+        if st.session_state.get("just_uploaded", False):
+            st.session_state.upload_counter += 1
+            st.session_state.just_uploaded = False
+        
         with st.status("🤖 Robot Status", expanded=True) as status:
             st.write("Waking up...")
             time.sleep(1)
@@ -215,7 +273,12 @@ elif page == "📤 Review & Upload":
     col1, col2 = st.columns(2)
     with col1:
         st.subheader("1. New Files")
-        uploaded_files = st.file_uploader("Drag & Drop CSVs", type="csv", accept_multiple_files=True)
+        uploaded_files = st.file_uploader(
+            "Drag & Drop CSVs", 
+            type="csv", 
+            accept_multiple_files=True,
+            key=f"file_uploader_{st.session_state.upload_counter}"
+        )
     with col2:
         st.subheader("2. Fixed Files")
         if st.session_state.staged_fixes:
@@ -223,13 +286,20 @@ elif page == "📤 Review & Upload":
                 st.text(f"📄 {item['original_name']} ({len(item['dataframe'])} rows)")
         else:
             st.info("No fixed files waiting.")
+    
     st.divider()
     
+    # UPLOAD BUTTON AT TOP
     total_new = len(uploaded_files) if uploaded_files else 0
     total_fixed = len(st.session_state.staged_fixes)
     
     if total_new + total_fixed > 0:
-        if st.button(f"🚀 Upload All ({total_new + total_fixed} files)"):
+        if st.button(f"🚀 Upload All ({total_new + total_fixed} files)", type="primary"):
+            # Clear the uploader on next render
+            if st.session_state.get("just_uploaded", False):
+                st.session_state.upload_counter += 1
+                st.session_state.just_uploaded = False
+            
             progress_bar = st.progress(0)
             current_step = 0
             total_steps = total_new + total_fixed
@@ -254,7 +324,50 @@ elif page == "📤 Review & Upload":
                     current_step += 1
                     progress_bar.progress(current_step / total_steps)
                 st.session_state.staged_fixes = []
+            
             st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar.")
+            # Mark that upload just completed
+            st.session_state.just_uploaded = True
+    
+    st.divider()
+    
+    # PREVIEW SECTION
+    preview_options = []
+    preview_data = {}
+    
+    # Add new files to preview options
+    if uploaded_files:
+        for f in uploaded_files:
+            preview_options.append((f"New: {f.name}", f))
+    
+    # Add fixed files to preview options
+    if st.session_state.staged_fixes:
+        for item in st.session_state.staged_fixes:
+            preview_options.append((f"Fixed: {item['original_name']}", item['dataframe']))
+    
+    if preview_options:
+        st.subheader("📋 File Preview")
+        preview_choice = st.selectbox(
+            "Select file to preview:", 
+            [opt[0] for opt in preview_options]
+        )
+        
+        if preview_choice:
+            # Find the selected file
+            selected_data = next(opt[1] for opt in preview_options if opt[0] == preview_choice)
+            
+            try:
+                if isinstance(selected_data, pd.DataFrame):
+                    # It's a fixed file (already a DataFrame)
+                    df_preview = selected_data.head(10)
+                else:
+                    # It's a new file (file object)
+                    df_preview = pd.read_csv(selected_data, nrows=10)
+                
+                st.caption(f"Showing first 10 rows of **{preview_choice}**")
+                st.dataframe(df_preview, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error reading file: {e}")
     else:
         st.caption("Waiting for files...")
 
