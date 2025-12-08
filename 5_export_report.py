@@ -26,7 +26,7 @@ else:
 # --- 2. GET TOKEN ---
 print("🔑 Requesting Azure Access Token via Python...")
 credential = DefaultAzureCredential()
-token_object = credential.get_token("https://storage.azure.com/.default")
+token_object = credential.get_token("https://storage.azure.com/")
 access_token = token_object.token
 
 # --- 3. CONFIGURE DUCKDB ---
