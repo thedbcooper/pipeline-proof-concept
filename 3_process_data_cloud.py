@@ -1,6 +1,5 @@
 import os
 import io
-import duckdb
 import pandas as pd
 from pydantic import BaseModel, field_validator, ValidationError
 from datetime import date, datetime
@@ -9,8 +8,9 @@ from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
-load_dotenv() # Loads the .env file with your Robot credentials
+load_dotenv() # Loads .env or GitHub Secrets
 
+# Get Account info
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 
@@ -19,12 +19,12 @@ print(f"🔌 Connecting to {ACCOUNT_NAME}...")
 credential = DefaultAzureCredential()
 blob_service = BlobServiceClient(ACCOUNT_URL, credential=credential)
 
-# Get clients for our specific "Drawers"
+# Get clients for our specific containers
 landing_client = blob_service.get_container_client("landing-zone")
 quarantine_client = blob_service.get_container_client("quarantine")
 data_client = blob_service.get_container_client("data")
 
-# --- PYDANTIC MODEL (Same as before) ---
+# --- PYDANTIC MODEL ---
 class LabResult(BaseModel):
     sample_id: str
     test_date: date
@@ -45,8 +45,7 @@ def get_partition_path(date_obj):
     return f"year={y}/week={w}"
 
 def process_pipeline():
-    # 1. LIST FILES (Cloud Version)
-    # We ask Azure: "What blobs are in the landing-zone?"
+    # 1. LIST FILES
     blobs = list(landing_client.list_blobs())
     
     if not blobs:
@@ -61,17 +60,17 @@ def process_pipeline():
     for blob in blobs:
         print(f"Downloading {blob.name}...")
         
-        # DOWNLOAD the content into memory (no need to save to disk yet)
+        # DOWNLOAD content into memory
         blob_client = landing_client.get_blob_client(blob.name)
         downloaded_bytes = blob_client.download_blob().readall()
         
-        # Read into Pandas using io.BytesIO (tricks Pandas into thinking it's a file)
-        # dtype=str preserves leading zeros
+        # Read into Pandas (Force dtype=str to protect leading zeros)
         df = pd.read_csv(io.BytesIO(downloaded_bytes), dtype=str)
 
         # VALIDATE LOOP
         for index, row in df.iterrows():
             try:
+                # Pydantic validation
                 valid_sample = LabResult(**row.to_dict())
                 all_valid_rows.append(valid_sample.model_dump())
             except ValidationError as e:
@@ -80,7 +79,7 @@ def process_pipeline():
                 bad_row['source_file'] = blob.name
                 all_error_rows.append(bad_row)
         
-        # DELETE processed file from landing-zone
+        # DELETE processed file
         print(f"Deleting {blob.name} from landing-zone...")
         blob_client.delete_blob()
 
@@ -90,10 +89,8 @@ def process_pipeline():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"quarantine_{timestamp}.csv"
         
-        # Convert DF to CSV string in memory
         csv_buffer = error_df.to_csv(index=False)
         
-        # UPLOAD to Azure
         print(f"⚠️ Uploading errors to {filename}...")
         quarantine_client.upload_blob(filename, csv_buffer, overwrite=True)
 
@@ -101,11 +98,12 @@ def process_pipeline():
         print("No valid data to upsert.")
         return
 
-    # --- 3. HANDLE GOOD DATA (Upsert) ---
+    # --- 3. HANDLE GOOD DATA (Upsert with Pandas) ---
     full_df = pd.DataFrame(all_valid_rows)
-    full_df['partition_path'] = full_df['test_date'].apply(get_partition_path)
+    # Convert test_date to actual datetime objects for the helper function
+    full_df['test_date_obj'] = pd.to_datetime(full_df['test_date'])
+    full_df['partition_path'] = full_df['test_date_obj'].apply(get_partition_path)
 
-    con = duckdb.connect()
     unique_partitions = full_df['partition_path'].unique()
 
     for part_path in unique_partitions:
@@ -113,47 +111,38 @@ def process_pipeline():
         
         # Filter new data for this week
         new_batch_df = full_df[full_df['partition_path'] == part_path].copy()
+        # Drop the helper columns before saving
+        new_batch_df = new_batch_df.drop(columns=['partition_path', 'test_date_obj'])
         
-        # Define the cloud filename
+        # Define cloud filename
         blob_name = f"{part_path}/data.csv"
         blob_client = data_client.get_blob_client(blob_name)
         
-        # CHECK if history exists in Cloud
+        # CHECK if history exists
         if blob_client.exists():
             print(f"   Downloading history from Azure...")
+            download_stream = blob_client.download_blob()
             
-            # Download to a temp file on disk so DuckDB can read it safely
-            with open("temp_history.csv", "wb") as my_blob:
-                download_stream = blob_client.download_blob()
-                my_blob.write(download_stream.readall())
+            # Read history (Protect types!)
+            history_df = pd.read_csv(io.BytesIO(download_stream.readall()), dtype=str)
             
-            # DuckDB Magic (Same as before)
-            history_df = con.query(f"SELECT * FROM read_csv_auto('temp_history.csv', all_varchar=True)").to_df()
+            # --- THE UPSERT LOGIC ---
+            print("   Merging and Upserting...")
             
-            con.register('history_table', history_df)
-            con.register('new_batch_table', new_batch_df)
+            # 1. Stack: History on top, New Batch on bottom
+            combined_df = pd.concat([history_df, new_batch_df], ignore_index=True)
             
-            merged_df = con.query("""
-                SELECT sample_id, CAST(test_date AS DATE) as test_date, result, CAST(viral_load AS INTEGER) as viral_load 
-                FROM history_table 
-                WHERE sample_id NOT IN (SELECT sample_id FROM new_batch_table)
-                UNION ALL
-                SELECT sample_id, test_date, result, viral_load FROM new_batch_table
-            """).to_df()
+            # 2. Deduplicate: Based on 'sample_id'
+            # keep='last' ensures the row from 'new_batch_df' (bottom) wins
+            final_df = combined_df.drop_duplicates(subset=['sample_id'], keep='last')
             
-            # Convert result to CSV string
-            output_csv = merged_df.to_csv(index=False)
-            
-            # UPLOAD back to Azure
-            print(f"   Uploading merged data back to {blob_name}...")
+            # Upload back
+            output_csv = final_df.to_csv(index=False)
+            print(f"   Uploading merged data ({len(final_df)} rows)...")
             blob_client.upload_blob(output_csv, overwrite=True)
-            
-            # Clean up temp file
-            os.remove("temp_history.csv")
             
         else:
             print(f"   No history found. Creating new file {blob_name}...")
-            new_batch_df = new_batch_df.drop(columns=['partition_path'])
             output_csv = new_batch_df.to_csv(index=False)
             blob_client.upload_blob(output_csv, overwrite=True)
 
