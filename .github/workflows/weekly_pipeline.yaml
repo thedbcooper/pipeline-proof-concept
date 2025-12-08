@@ -17,16 +17,12 @@ jobs:
         uses: astral-sh/setup-uv@v4
         with:
           version: "latest"
-
-      - name: Setup Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
+          enable-cache: true  # Bonus: Caches your environment so runs are faster
 
       - name: Install Dependencies
-        # 'uv pip install' is the drop-in replacement for 'pip install'
-        # --system tells uv to install into the environment setup-python created
-        run: uv sync
+        # --frozen ensures we don't accidentally update packages during CI
+        # This looks at uv.lock and installs the exact versions you use locally
+        run: uv sync --frozen
 
       - name: Run Cloud Pipeline
         env:
@@ -34,7 +30,8 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        run: python 3_process_data_cloud.py
+        # 'uv run' executes the command inside the .venv created by 'uv sync'
+        run: uv run python 3_process_data_cloud.py
 
       - name: (Optional) Generate CDC Report
         if: success()
@@ -43,4 +40,4 @@ jobs:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-        run: python 5_export_report.py
+        run: uv run python 5_export_report.py
