@@ -139,42 +139,66 @@ with st.sidebar:
                     del st.session_state.preview_df
 
 # ==========================================
-# PAGE 0: LANDING PAGE (New!)
+# PAGE 0: LANDING PAGE
 # ==========================================
 if page == "🏠 Start Here":
     st.title("🧬 Lab Data Pipeline: Admin Console")
-    st.markdown("### Welcome to the Data Ingestion Control Center")
     st.markdown("""
-    This dashboard allows Public Health Epidemiologists to safely manage the flow of sensitive lab data 
+    **Welcome.** This dashboard allows Public Health Epidemiologists to safely manage the flow of sensitive lab data 
     into the Azure Lakehouse without needing to write code.
     """)
     
     st.divider()
-
-    # VISUAL WORKFLOW
-    st.subheader("How it works")
     
-    col1, col2, col3, col4 = st.columns(4)
+    # --- WORKFLOW 1: THE HAPPY PATH ---
+    st.subheader("🟢 Workflow A: Standard Ingestion")
+    st.caption("How data moves from partners to the dashboard.")
+    
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.info("**Step 1: Upload**")
-        st.markdown("Drag & drop raw CSV files from partner labs.")
-        st.caption("📍 *Go to 'Review & Upload'*")
-        
+        st.markdown("### 1. Upload")
+        st.markdown("Drag & drop raw CSVs to the **Landing Zone**.")
+        st.info("📍 *Tab: 'Review & Upload'*")
+
     with col2:
-        st.info("**Step 2: Validation**")
-        st.markdown("The robot checks every row. Bad data is quarantined.")
-        st.caption("🤖 *Automatic Process*")
+        st.markdown("### 2. Processing")
+        st.markdown("The robot wakes up, validates schema, and merges data.")
+        st.warning("""
+        **How to run it:**
+        * **Production:** Auto-runs weekly (Cron Job).
+        * **Admin/Demo:** Click **▶️ Trigger Weekly Pipeline** in the sidebar.
+        """)
 
     with col3:
-        st.info("**Step 3: Fix**")
-        st.markdown("Review quarantined files, correct typos, and re-submit.")
-        st.caption("📍 *Go to 'Fix Quarantine'*")
-        
-    with col4:
-        st.info("**Step 4: Report**")
-        st.markdown("Trigger the pipeline to merge clean data into the Master Report.")
-        st.caption("📍 *Go to 'Final Report'*")
+        st.markdown("### 3. Master Report")
+        st.markdown("Valid data is upserted into the CDC Export.")
+        st.success("📍 *Tab: 'Final Report'*")
+
+    st.divider()
+
+    # --- WORKFLOW 2: THE EXCEPTION PATH ---
+    st.subheader("🔴 Workflow B: Error Resolution")
+    st.caption("What happens when the robot rejects a file.")
+
+    
+
+    q_col1, q_col2, q_col3 = st.columns(3)
+
+    with q_col1:
+        st.markdown("### 1. Alert")
+        st.markdown("Files with errors (e.g. 'Positive' instead of 'POS') are **Quarantined**.")
+        st.error("📍 *Tab: 'Fix Quarantine'*")
+
+    with q_col2:
+        st.markdown("### 2. Human Review")
+        st.markdown("An admin corrects the specific cell using the Excel-like editor.")
+        st.caption("✍️ *Manual Fix*")
+
+    with q_col3:
+        st.markdown("### 3. Re-Integration")
+        st.markdown("The fixed file is promoted back to the Upload queue for the next run.")
+        st.info("📍 *Click 'Stage for Upload'*")
 
     st.divider()
     
