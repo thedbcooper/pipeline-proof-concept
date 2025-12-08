@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "adlfs>=2025.8.0",
     "azure-identity>=1.25.1",
     "azure-storage-blob>=12.27.1",
     "duckdb>=1.4.2",
