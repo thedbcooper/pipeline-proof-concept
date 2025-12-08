@@ -155,12 +155,6 @@ def process_pipeline():
             # Fix 1: Typo 'download_stream' vs 'downloaded_stream'
             history_df = pl.read_parquet(io.BytesIO(download_stream.readall()))
             
-            # Ensure old parquet files have sample_status column (default to 'keep')
-            if 'sample_status' not in history_df.columns:
-                history_df = history_df.with_columns(
-                    pl.lit('keep').alias('sample_status')
-                )
-            
             print("   Merging...")
             combined_df = pl.concat([history_df, new_batch_df])
             final_df = combined_df.unique(subset=["sample_id"], keep="last")
