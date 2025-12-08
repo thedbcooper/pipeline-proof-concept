@@ -520,6 +520,29 @@ elif page == "📦 Landing Zone":
                         df_preview = pd.read_csv(io.BytesIO(data), nrows=10)
                         st.caption(f"Showing first 10 rows of **{selected_blob_name}**")
                         st.dataframe(df_preview, width="stretch")
+                        
+                        # Delete button with confirmation
+                        st.divider()
+                        if st.button("🗑️ Delete This File", type="secondary", key="delete_landing"):
+                            st.session_state.confirm_delete_landing = selected_blob_name
+                        
+                        # Confirmation dialog
+                        if st.session_state.get("confirm_delete_landing") == selected_blob_name:
+                            st.warning(f"⚠️ Are you sure you want to delete `{selected_blob_name}`? This action cannot be undone.")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_landing"):
+                                    try:
+                                        blob_client.delete_blob()
+                                        st.session_state.confirm_delete_landing = None
+                                        st.toast(f"Deleted `{selected_blob_name}` from landing zone")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Failed to delete: {e}")
+                            with col2:
+                                if st.button("❌ Cancel", key="confirm_no_landing"):
+                                    st.session_state.confirm_delete_landing = None
+                                    st.rerun()
                     except Exception as e:
                         st.error(f"Error reading file: {e}")
     
@@ -573,13 +596,26 @@ elif page == "🛠️ Fix Quarantine":
             
             with col2:
                 if st.button("🗑️ Delete File", type="secondary", width="stretch"):
-                    try:
-                        client = quarantine_client.get_blob_client(sel)
-                        client.delete_blob()
-                        st.toast(f"Deleted `{sel}` from quarantine")
+                    st.session_state.confirm_delete_quarantine = sel
+            
+            # Confirmation dialog for quarantine deletion
+            if st.session_state.get("confirm_delete_quarantine") == sel:
+                st.warning(f"⚠️ Are you sure you want to delete `{sel}`? This action cannot be undone.")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_quarantine"):
+                        try:
+                            client = quarantine_client.get_blob_client(sel)
+                            client.delete_blob()
+                            st.session_state.confirm_delete_quarantine = None
+                            st.toast(f"Deleted `{sel}` from quarantine")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Failed to delete: {e}")
+                with col2:
+                    if st.button("❌ Cancel", key="confirm_no_quarantine"):
+                        st.session_state.confirm_delete_quarantine = None
                         st.rerun()
-                    except Exception as e:
-                        st.error(f"Failed to delete: {e}")
 
 # ==========================================
 # PAGE 4: FINAL REPORT
