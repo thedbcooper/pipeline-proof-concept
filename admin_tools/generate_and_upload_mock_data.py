@@ -1,4 +1,4 @@
-import pandas as pd
+import polars as pl
 import random
 import os
 from datetime import datetime, timedelta
@@ -17,7 +17,7 @@ blob_service = BlobServiceClient(ACCOUNT_URL, credential=credential)
 landing_client = blob_service.get_container_client("landing-zone")
 
 # --- GENERATOR SETTINGS ---
-WEEKS_TO_GENERATE = 10
+WEEKS_TO_GENERATE = 5
 SAMPLES_PER_WEEK = 10
 
 print(f"🚀 Generating data for the past {WEEKS_TO_GENERATE} weeks...")
@@ -43,14 +43,12 @@ for i in range(WEEKS_TO_GENERATE):
         'viral_load': [random.randint(0, 5000) for _ in range(SAMPLES_PER_WEEK)]
     }
     
-    df = pd.DataFrame(data)
-    
-    # Convert to CSV string
-    csv_data = df.to_csv(index=False)
+    # Create Polars DataFrame
+    df = pl.DataFrame(data)
     
     # Upload to Azure
     print(f"   📤 Uploading {filename} to landing-zone ({len(df)} rows)...")
-    landing_client.upload_blob(name=filename, data=csv_data, overwrite=True)
+    landing_client.upload_blob(name=filename, data=df.write_csv(), overwrite=True)
 
 print("\n✅ Success! 5 weeks of data are now waiting in the Landing Zone.")
-print("   👉 Run 'python 3_process_data_cloud.py' (or trigger the GitHub Action) to process them.")
+print("   👉 Run the pipeline to process them.")

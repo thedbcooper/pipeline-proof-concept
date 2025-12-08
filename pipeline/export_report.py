@@ -1,23 +1,22 @@
-import pandas as pd
+import polars as pl
 import os
 import shutil
-from dotenv import load_dotenv
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
+from dotenv import load_dotenv
 
-print("🚀 RUNNING SCRIPT: Pure Pandas Export")
+print("🚀 RUNNING SCRIPT: Polars Export (Parquet Edition)")
 
-# Load credentials
+# --- CONFIGURATION ---
 load_dotenv()
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 
-# CONFIG
+# Config settings
 LOCAL_DOWNLOAD_DIR = "temp_lakehouse"
 TARGET_PREFIXES = [""] # Download everything
 
 # --- 1. DOWNLOAD (Client-Side Pruning) ---
-# (This part is identical to the previous Python script)
 print("🔌 Connecting to Azure...")
 credential = DefaultAzureCredential()
 blob_service = BlobServiceClient(ACCOUNT_URL, credential=credential)
@@ -33,7 +32,8 @@ os.makedirs(LOCAL_DOWNLOAD_DIR, exist_ok=True)
 downloaded_files = []
 
 for blob in blobs:
-    if "data.csv" not in blob.name: continue
+    # CHANGE: We now look for .parquet files
+    if "data.parquet" not in blob.name: continue
     
     # Pruning Check
     match = False
@@ -51,30 +51,27 @@ for blob in blobs:
     
     downloaded_files.append(local_path)
 
-print(f"✅ Downloaded {len(downloaded_files)} files.")
-
 if not downloaded_files:
     print("No files found!")
     exit(0)
 
-# --- 2. GENERATE REPORT (PANDAS) ---
-print("📦 Generating report with Pandas...")
+# --- 2. GENERATE REPORT ---
+print("📦 Generating report with Polars...")
 
-# Read all CSVs into a list of DataFrames
-# dtype=str ensures we don't lose leading zeros during the merge
-dfs = [pd.read_csv(f, dtype=str) for f in downloaded_files]
+# CHANGE: Read Parquet instead of CSV
+# Parquet already knows 'viral_load' is Int and 'test_date' is Date.
+df = pl.read_parquet(downloaded_files)
 
-# Stack them all together
-full_df = pd.concat(dfs, ignore_index=True)
+# DELETED: The 'df.with_columns(...str.to_date...)' block.
+# We don't need it anymore because Parquet preserved the Date type!
 
-# Convert types if needed for sorting (e.g. date)
-full_df['test_date'] = pd.to_datetime(full_df['test_date'])
-full_df = full_df.sort_values(by='test_date', ascending=False)
+# Sort descending by date
+df = df.sort("test_date", descending=True)
 
-# Save to CSV
+# Save to CSV (Final report usually needs to be CSV for compatibility)
 local_filename = "final_cdc_export.csv"
-full_df.to_csv(local_filename, index=False)
-print(f"✅ Created {local_filename} with {len(full_df)} rows.")
+df.write_csv(local_filename)
+print(f"✅ Created {local_filename} with {len(df)} rows.")
 
 # --- 3. UPLOAD ---
 print(f"☁️  Uploading to Azure...")

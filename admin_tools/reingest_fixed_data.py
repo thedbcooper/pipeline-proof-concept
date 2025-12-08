@@ -1,11 +1,13 @@
-import pandas as pd
+import polars as pl
 import os
 import shutil
 from datetime import date
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
-from ..models import LabResult
+
+# --- MODULE IMPORTS ---
+from models import LabResult
 from pydantic import ValidationError
 
 # --- CONFIGURATION ---
@@ -37,21 +39,21 @@ def process_reingest():
         print(f"\nChecking {filename}...")
         
         try:
-            # 1. Read and Clean
+            # 1. Read and Clean (Polars)
             # We enforce string types to preserve leading zeros
-            df = pd.read_csv(filepath, dtype=str)
+            df = pl.read_csv(filepath, infer_schema_length=0)
             
-            # Remove the old error columns if they exist (so validation doesn't get confused)
-            cols_to_drop = ['pipeline_error', 'source_file']
-            df = df.drop(columns=[c for c in cols_to_drop if c in df.columns])
+            # Remove the old error columns if they exist
+            # strict=False prevents crash if column doesn't exist
+            df = df.drop(["pipeline_error", "source_file"], strict=False)
 
             # 2. Validate Rows
             validation_passed = True
-            for index, row in df.iterrows():
+            for row in df.iter_rows(named=True):
                 try:
-                    LabResult(**row.to_dict())
+                    LabResult(**row)
                 except ValidationError as e:
-                    print(f"   ❌ Validation FAILED on row {index}: {e}")
+                    print(f"   ❌ Validation FAILED: {e}")
                     validation_passed = False
                     # We stop checking this file after the first error to save time
                     break 
@@ -62,11 +64,9 @@ def process_reingest():
                 
                 # Upload to Landing Zone
                 print("   🚀 Uploading to landing-zone...")
-                clean_csv = df.to_csv(index=False)
-                landing_client.upload_blob(filename, clean_csv, overwrite=True)
+                landing_client.upload_blob(filename, df.write_csv(), overwrite=True)
                 
                 # Delete from Quarantine (Cloud)
-                # We assume the filename matches the blob name in quarantine
                 print("   🗑️  Deleting from Azure quarantine...")
                 quarantine_blob = quarantine_client.get_blob_client(filename)
                 if quarantine_blob.exists():
