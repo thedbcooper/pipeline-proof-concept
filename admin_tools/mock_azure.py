@@ -7,16 +7,16 @@ INITIAL_STATE = {
     "landing-zone": {},
     "quarantine": {
         "quarantine_demo.csv": (
-            b"sample_id,test_date,result,viral_load,pipeline_error,source_file\n"
+            b"sample_id,test_date,result,viral_load,sample_status,pipeline_error,source_file\n"
             # CHANGE: ID is now TEST-999 to avoid collision with History
-            b"TEST-999,2025-12-05,Positive,8000,\"result Value error, Invalid result code: Must be POS, NEG, or N/A\",demo_upload.csv"
+            b"TEST-999,2025-12-05,Positive,8000,keep,\"result Value error, Invalid result code: Must be POS, NEG, or N/A\",demo_upload.csv"
         )
     },
     "data": {
         "final_cdc_export.csv": (
-            b"sample_id,test_date,result,viral_load\n"
-            b"TEST-001,2025-12-01,POS,5000\n"
-            b"TEST-002,2025-12-02,NEG,0"
+            b"sample_id,test_date,result,viral_load,sample_status\n"
+            b"TEST-001,2025-12-01,POS,5000,keep\n"
+            b"TEST-002,2025-12-02,NEG,0,keep"
         )
     }
 }

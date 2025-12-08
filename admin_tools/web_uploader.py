@@ -309,7 +309,7 @@ if page == "📤 Review & Upload":
                     df_preview = pd.read_csv(selected_data, nrows=10)
                 
                 st.caption(f"Showing first 10 rows of **{preview_choice}**")
-                st.dataframe(df_preview, use_container_width=True)
+                st.dataframe(df_preview, width="stretch")
             except Exception as e:
                 st.error(f"Error reading file: {e}")
     else:
@@ -351,7 +351,7 @@ elif page == "📦 Landing Zone":
                         data = blob_client.download_blob().readall()
                         df_preview = pd.read_csv(io.BytesIO(data), nrows=10)
                         st.caption(f"Showing first 10 rows of **{selected_blob_name}**")
-                        st.dataframe(df_preview, use_container_width=True)
+                        st.dataframe(df_preview, width="stretch")
                     except Exception as e:
                         st.error(f"Error reading file: {e}")
     
@@ -395,7 +395,7 @@ elif page == "🛠️ Fix Quarantine":
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ Stage for Upload", use_container_width=True):
+                if st.button("✅ Stage for Upload", width="stretch"):
                     cols_to_drop = ["pipeline_error", "source_file"]
                     final_df = edited_df.drop(columns=[c for c in cols_to_drop if c in edited_df.columns])
                     
@@ -409,7 +409,7 @@ elif page == "🛠️ Fix Quarantine":
                     st.rerun()
             
             with col2:
-                if st.button("🗑️ Delete File", type="secondary", use_container_width=True):
+                if st.button("🗑️ Delete File", type="secondary", width="stretch"):
                     try:
                         blob_client = quarantine_client.get_blob_client(selected_file)
                         blob_client.delete_blob()

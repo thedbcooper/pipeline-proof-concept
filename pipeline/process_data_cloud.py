@@ -51,6 +51,27 @@ def process_pipeline():
 
         # VALIDATE LOOP
         for row in df.iter_rows(named=True):
+            # Check if this is a tombstone record (skip full validation)
+            if row.get('sample_status') == 'remove':
+                # For tombstone records, only need sample_id and sample_status
+                if 'sample_id' in row:
+                    tombstone_record = {
+                        'sample_id': row['sample_id'],
+                        'sample_status': 'remove',
+                        # Add dummy values for required fields to pass through the system
+                        'test_date': '2000-01-01',
+                        'result': 'N/A',
+                        'viral_load': 0
+                    }
+                    all_valid_rows.append(tombstone_record)
+                else:
+                    bad_row = row
+                    bad_row['pipeline_error'] = "Tombstone record missing 'sample_id'"
+                    bad_row['source_file'] = blob.name
+                    all_error_rows.append(bad_row)
+                continue
+            
+            # Normal validation for non-tombstone records
             try:
                 valid_sample = LabResult(**row)
                 all_valid_rows.append(valid_sample.model_dump())
@@ -109,6 +130,14 @@ def process_pipeline():
             combined_df = pl.concat([history_df, new_batch_df])
             final_df = combined_df.unique(subset=["sample_id"], keep="last")
             
+            # Handle tombstone deletions: Remove rows with sample_status='remove'
+            if 'sample_status' in final_df.columns:
+                rows_before = len(final_df)
+                final_df = final_df.filter(pl.col("sample_status") != "remove")
+                rows_removed = rows_before - len(final_df)
+                if rows_removed > 0:
+                    print(f"   Removed {rows_removed} tombstoned row(s)")
+            
             print(f"   Uploading Parquet ({len(final_df)} rows)...")
             
             # Fix 2: Write to buffer, then upload bytes
@@ -119,9 +148,12 @@ def process_pipeline():
         else:
             print(f"   Creating new Parquet file {blob_name}...")
             
+            # Filter out tombstones even for new files
+            final_batch = new_batch_df.filter(pl.col("sample_status") != "remove") if 'sample_status' in new_batch_df.columns else new_batch_df
+            
             # Fix 2: Write to buffer, then upload bytes
             output_stream = io.BytesIO()
-            new_batch_df.write_parquet(output_stream)
+            final_batch.write_parquet(output_stream)
             blob_client.upload_blob(output_stream.getvalue(), overwrite=True)
 
     print("✅ Cloud Pipeline Complete!")

@@ -82,6 +82,29 @@ def run_mock_pipeline():
             error_count = 0
             
             for index, row in df.iterrows():
+                # Check if this is a tombstone record (skip full validation)
+                if row.get('sample_status') == 'remove':
+                    # For tombstone records, only need sample_id and sample_status
+                    if pd.notna(row.get('sample_id')):
+                        tombstone_record = {
+                            'sample_id': row['sample_id'],
+                            'sample_status': 'remove',
+                            # Add dummy values for required fields
+                            'test_date': '2000-01-01',
+                            'result': 'N/A',
+                            'viral_load': 0
+                        }
+                        all_valid_rows.append(tombstone_record)
+                        valid_count += 1
+                    else:
+                        bad_row = row.to_dict()
+                        bad_row['pipeline_error'] = "Tombstone record missing 'sample_id'"
+                        bad_row['source_file'] = blob_prop.name
+                        all_error_rows.append(bad_row)
+                        error_count += 1
+                    continue
+                
+                # Normal validation for non-tombstone records
                 try:
                     # Pydantic validation
                     valid_sample = LabResult(**row.to_dict())
@@ -122,6 +145,14 @@ def run_mock_pipeline():
         
         full_df = pd.concat([history_df, new_batch])
         full_df = full_df.drop_duplicates(subset=["sample_id"], keep="last")
+        
+        # Handle tombstone deletions: Remove rows with sample_status='remove'
+        if 'sample_status' in full_df.columns:
+            rows_before_tombstone = len(full_df)
+            full_df = full_df[full_df['sample_status'] != 'remove']
+            rows_removed = rows_before_tombstone - len(full_df)
+            if rows_removed > 0:
+                log.append(f"🗑️ Removed {rows_removed} tombstoned row(s)")
         
         if "test_date" in full_df.columns:
             full_df = full_df.sort_values("test_date", ascending=False)
@@ -357,7 +388,7 @@ elif page == "📤 Review & Upload":
                     df_preview = pd.read_csv(selected_data, nrows=10)
                 
                 st.caption(f"Showing first 10 rows of **{preview_choice}**")
-                st.dataframe(df_preview, use_container_width=True)
+                st.dataframe(df_preview, width="stretch")
             except Exception as e:
                 st.error(f"Error reading file: {e}")
     else:
@@ -400,7 +431,7 @@ elif page == "📦 Landing Zone":
                         if isinstance(data, str): data = data.encode('utf-8')
                         df_preview = pd.read_csv(io.BytesIO(data), nrows=10)
                         st.caption(f"Showing first 10 rows of **{selected_blob_name}**")
-                        st.dataframe(df_preview, use_container_width=True)
+                        st.dataframe(df_preview, width="stretch")
                     except Exception as e:
                         st.error(f"Error reading file: {e}")
     
@@ -441,7 +472,7 @@ elif page == "🛠️ Fix Quarantine":
 
             col1, col2 = st.columns(2)
             with col1:
-                if st.button("✅ Stage for Upload", use_container_width=True):
+                if st.button("✅ Stage for Upload", width="stretch"):
                     clean_df = edited_df.drop(columns=["pipeline_error", "source_file"], errors='ignore')
                     st.session_state.staged_fixes.append({
                         "original_name": sel, "dataframe": clean_df
@@ -450,7 +481,7 @@ elif page == "🛠️ Fix Quarantine":
                     st.rerun()
             
             with col2:
-                if st.button("🗑️ Delete File", type="secondary", use_container_width=True):
+                if st.button("🗑️ Delete File", type="secondary", width="stretch"):
                     try:
                         client = quarantine_client.get_blob_client(sel)
                         client.delete_blob()
