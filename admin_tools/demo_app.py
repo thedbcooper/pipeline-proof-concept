@@ -41,28 +41,48 @@ def get_mock_clients():
     return (
         MockContainerClient("landing-zone"),
         MockContainerClient("quarantine"),
-        MockContainerClient("data")
+        MockContainerClient("data"),
+        MockContainerClient("logs")
     )
 
-landing_client, quarantine_client, data_client = get_mock_clients()
+landing_client, quarantine_client, data_client, logs_client = get_mock_clients()
 
 # ==========================================
 # 🤖 MINI-PIPELINE
 # ==========================================
 def run_mock_pipeline():
+    from datetime import datetime
+    
+    # Initialize execution log
+    execution_start = datetime.now()
+    metrics = {
+        'execution_timestamp': execution_start.isoformat(),
+        'files_processed': 0,
+        'rows_quarantined': 0,
+        'rows_inserted': 0,
+        'rows_updated': 0,
+        'rows_deleted': 0,
+        'total_rows': 0
+    }
+    
     log = []
     blobs = landing_client.list_blobs()
     if not blobs:
+        # Save log even for empty runs
+        _save_mock_execution_log(metrics)
         return "📭 No new files in Landing Zone."
     
+    metrics['files_processed'] = len(blobs)
     log.append(f"Found {len(blobs)} new files to process.")
 
     report_blob = data_client.get_blob_client("final_cdc_export.csv")
     if report_blob.exists():
         history_bytes = report_blob.download_blob().readall()
         history_df = pd.read_csv(io.BytesIO(history_bytes), dtype=str)
+        existing_ids = set(history_df['sample_id'].tolist()) if 'sample_id' in history_df.columns else set()
     else:
         history_df = pd.DataFrame(columns=["sample_id", "test_date", "result", "viral_load"])
+        existing_ids = set()
     
     rows_before = len(history_df)
     log.append(f"History contains {rows_before} rows.")
@@ -131,6 +151,7 @@ def run_mock_pipeline():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"quarantine_{timestamp}.csv"
         
+        metrics['rows_quarantined'] = len(all_error_rows)
         csv_buffer = error_df.to_csv(index=False).encode('utf-8')
         quarantine_client.upload_blob(filename, csv_buffer, overwrite=True)
         log.append(f"⚠️ Quarantined {len(all_error_rows)} rows to {filename}")
@@ -138,6 +159,13 @@ def run_mock_pipeline():
     # Handle good data - upsert into report
     if all_valid_rows:
         new_batch = pd.DataFrame(all_valid_rows)
+        
+        # Track inserts vs updates
+        new_batch_ids = set(new_batch['sample_id'].tolist()) if 'sample_id' in new_batch.columns else set()
+        inserts = len(new_batch_ids - existing_ids)
+        updates = len(new_batch_ids & existing_ids)
+        metrics['rows_inserted'] = inserts
+        metrics['rows_updated'] = updates
         
         # Convert test_date to string for consistency before merging
         if "test_date" in new_batch.columns:
@@ -152,6 +180,7 @@ def run_mock_pipeline():
             full_df = full_df[full_df['sample_status'] != 'remove']
             rows_removed = rows_before_tombstone - len(full_df)
             if rows_removed > 0:
+                metrics['rows_deleted'] = rows_removed
                 log.append(f"🗑️ Removed {rows_removed} tombstoned row(s)")
         
         if "test_date" in full_df.columns:
@@ -161,12 +190,37 @@ def run_mock_pipeline():
         report_blob.upload_blob(csv_out, overwrite=True)
         
         rows_after = len(full_df)
+        metrics['total_rows'] = rows_after
         log.append(f"📊 Rows Before: {rows_before} -> Rows After: {rows_after}")
         log.append(f"✅ Report successfully updated!")
     elif not all_error_rows:
         log.append("⚠️ No valid data to process.")
     
-    return "\n".join(log)
+    # Save execution log
+    _save_mock_execution_log(metrics)
+    
+    # Return log string with metrics appended
+    return "\n".join(log) + f"\n\nMETRICS|{metrics['files_processed']}|{metrics['rows_quarantined']}|{metrics['rows_inserted']}|{metrics['rows_updated']}|{metrics['rows_deleted']}|{metrics['total_rows']}"
+
+def _save_mock_execution_log(metrics):
+    """Save execution log to logs container."""
+    from datetime import datetime
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_filename = f"execution_{timestamp}.csv"
+        
+        # Convert to DataFrame and CSV
+        log_df = pd.DataFrame([metrics])
+        log_csv = log_df.to_csv(index=False).encode('utf-8')
+        
+        # Upload to logs container
+        logs_client.upload_blob(log_filename, log_csv, overwrite=True)
+        print(f"✅ Log saved: {log_filename}")  # Debug output
+    except Exception as e:
+        # Show error in demo for debugging
+        print(f"⚠️ Failed to save execution log: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ==========================================
 # SIDEBAR: NAVIGATION & CONTROLS
@@ -194,7 +248,7 @@ with st.sidebar:
     # NAVIGATION
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Review & Upload", "📦 Landing Zone", "🛠️ Fix Quarantine", "📊 Final Report"],
+        ["🏠 Start Here", "📤 Review & Upload", "📦 Landing Zone", "🛠️ Fix Quarantine", "📊 Final Report", "📈 Execution Logs"],
         key="nav_selection"
     )
     
@@ -202,25 +256,58 @@ with st.sidebar:
     st.subheader("🤖 Robot Controls")
     
     if st.button("▶️ Trigger Weekly Pipeline"):
-        with st.status("🤖 Robot Status", expanded=True) as status:
-            st.write("Waking up...")
-            time.sleep(1)
-            result_log = run_mock_pipeline()
+        with st.status("🤖 Processing Pipeline...", expanded=True) as status:
+            st.write("🔍 Scanning landing zone...")
             time.sleep(0.5)
+            result_log = run_mock_pipeline()
+            time.sleep(0.3)
             
             if "CRITICAL ERROR" in result_log or "Failed" in result_log:
-                status.update(label="Pipeline Failed", state="error", expanded=True)
-                st.error("Errors found.")
-                st.code(result_log)
+                status.update(label="❌ Pipeline Failed", state="error", expanded=True)
+                st.error("⚠️ **Pipeline encountered errors**")
+                with st.expander("📜 View Error Details", expanded=True):
+                    st.code(result_log, language="text")
             elif "No new files" in result_log:
-                status.update(label="Pipeline Idle", state="complete", expanded=False)
-                st.warning(result_log)
+                status.update(label="⏸️ Pipeline Idle", state="complete", expanded=True)
+                st.info("📭 **No files to process**")
+                st.caption(result_log)
             else:
-                status.update(label="Success!", state="complete", expanded=False)
-                st.success("Complete")
-                st.code(result_log)
-                if "preview_df" in st.session_state:
-                    del st.session_state.preview_df
+                status.update(label="✅ Pipeline Complete!", state="complete", expanded=True)
+                
+                # Parse the METRICS from the log (new format)
+                if "METRICS|" in result_log:
+                    metrics_line = [l for l in result_log.split('\n') if 'METRICS|' in l][0]
+                    _, files_processed, rows_quarantined, rows_inserted, rows_updated, rows_deleted, total_rows = metrics_line.split('|')
+                    
+                    # Display summary
+                    st.success("✨ **Pipeline executed successfully!**")
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Files Processed", files_processed)
+                    with col2:
+                        st.metric("Rows Quarantined", rows_quarantined, delta=None if rows_quarantined == '0' else f"-{rows_quarantined}", delta_color="inverse")
+                    with col3:
+                        st.metric("Rows Inserted", rows_inserted)
+                    with col4:
+                        st.metric("Rows Updated", rows_updated)
+                    
+                    col5, col6 = st.columns(2)
+                    with col5:
+                        st.metric("⚠️ Rows Deleted", rows_deleted, delta=None if rows_deleted == '0' else f"-{rows_deleted}", delta_color="inverse")
+                    with col6:
+                        st.metric("Total Rows", total_rows)
+                    
+                    if rows_deleted != '0':
+                        st.warning(f"🗑️ **{rows_deleted} row(s) were permanently removed** due to sample_status='remove'")
+                else:
+                    # Fallback to old parsing method
+                    st.success("✨ **Pipeline executed successfully!**")
+                
+                # Clean log for display (remove METRICS line)
+                display_log = '\n'.join([line for line in result_log.split('\n') if not line.startswith('METRICS|')])
+                with st.expander("📜 View Detailed Log"):
+                    st.code(display_log, language="text")
 
 # ==========================================
 # PAGE 0: LANDING PAGE
@@ -462,6 +549,9 @@ elif page == "🛠️ Fix Quarantine":
             
             df = pd.read_csv(io.BytesIO(stream), dtype=str)
             df = df.reset_index(drop=True)
+            
+            # Show column info
+            st.caption(f"📋 Columns: {', '.join(df.columns.tolist())}")
 
             if "pipeline_error" in df.columns:
                 errs = df["pipeline_error"].unique()
@@ -518,11 +608,115 @@ elif page == "📊 Final Report":
                 data = client.download_blob().readall()
                 if isinstance(data, str): data = data.encode('utf-8')
                 st.session_state.full_download = data
-                st.success("Ready!")
-
+        
         if "preview_df" in st.session_state:
             st.divider()
+            st.subheader("Data Preview")
             st.dataframe(st.session_state.preview_df, width="stretch")
-
+        
         if "full_download" in st.session_state:
-            st.download_button("💾 Save CSV", st.session_state.full_download, "final_cdc_export.csv", "text/csv")
+            st.download_button(
+                label="💾 Download Full CSV",
+                data=st.session_state.full_download,
+                file_name="final_cdc_export.csv",
+                mime="text/csv"
+            )
+
+# ==========================================
+# PAGE 5: EXECUTION LOGS
+# ==========================================
+elif page == "📈 Execution Logs":
+    st.title("📈 Pipeline Execution History")
+    
+    st.info("""
+        This page shows the execution history of the data processing pipeline.
+        Each log entry captures metrics from a single pipeline run.
+    """)
+    
+    # List all log files
+    try:
+        log_blobs = logs_client.list_blobs()
+        
+        if not log_blobs:
+            st.warning("📭 No execution logs found. Run the pipeline to generate logs.")
+        else:
+            st.success(f"Found {len(log_blobs)} execution log(s)")
+            
+            # Load all logs into a single dataframe
+            all_logs = []
+            for blob in sorted(log_blobs, key=lambda x: x.name, reverse=True):  # Most recent first
+                try:
+                    blob_client = logs_client.get_blob_client(blob.name)
+                    log_data = blob_client.download_blob().readall()
+                    if isinstance(log_data, str): 
+                        log_data = log_data.encode('utf-8')
+                    log_df = pd.read_csv(io.BytesIO(log_data))
+                    all_logs.append(log_df)
+                except Exception as e:
+                    st.warning(f"Could not read {blob.name}: {e}")
+            
+            if all_logs:
+                # Combine all logs
+                combined_logs = pd.concat(all_logs, ignore_index=True)
+                
+                # Sort by timestamp (most recent first)
+                combined_logs = combined_logs.sort_values('execution_timestamp', ascending=False)
+                
+                # Display summary metrics from most recent run
+                if len(combined_logs) > 0:
+                    latest = combined_logs.iloc[0]
+                    
+                    st.subheader("Latest Pipeline Run")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Files Processed", int(latest['files_processed']))
+                    with col2:
+                        st.metric("Rows Quarantined", int(latest['rows_quarantined']))
+                    with col3:
+                        st.metric("Rows Inserted", int(latest['rows_inserted']))
+                    with col4:
+                        st.metric("Rows Updated", int(latest['rows_updated']))
+                    
+                    col5, col6 = st.columns(2)
+                    with col5:
+                        st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
+                    with col6:
+                        st.metric("Total Rows", int(latest['total_rows']))
+                    
+                    st.caption(f"Executed at: {latest['execution_timestamp']}")
+                
+                # Show full history table
+                st.divider()
+                st.subheader("Execution History")
+                
+                # Format the dataframe for display
+                display_df = combined_logs.copy()
+                display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                
+                st.dataframe(
+                    display_df,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "execution_timestamp": "Timestamp",
+                        "files_processed": "Files",
+                        "rows_quarantined": "Quarantined",
+                        "rows_inserted": "Inserted",
+                        "rows_updated": "Updated",
+                        "rows_deleted": "Deleted",
+                        "total_rows": "Total Rows"
+                    }
+                )
+                
+                # Download option
+                csv_export = combined_logs.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Full Log History",
+                    data=csv_export,
+                    file_name="pipeline_execution_history.csv",
+                    mime="text/csv"
+                )
+    
+    except Exception as e:
+        st.error(f"Failed to load execution logs: {e}")

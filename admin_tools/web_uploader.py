@@ -79,6 +79,7 @@ try:
     landing_client = blob_service.get_container_client("landing-zone")
     quarantine_client = blob_service.get_container_client("quarantine")
     data_client = blob_service.get_container_client("data")
+    logs_client = blob_service.get_container_client("logs")
 except Exception as e:
     st.error(f"Failed to connect to Azure: {e}")
     st.stop()
@@ -92,18 +93,27 @@ with st.sidebar:
     
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Review & Upload", "📦 Landing Zone", "🛠️ Fix Quarantine", "📊 Final Report"],
+        ["🏠 Start Here", "📤 Review & Upload", "📦 Landing Zone", "🛠️ Fix Quarantine", "📊 Final Report", "📈 Execution Logs"],
         key="nav_selection"
     )
     
     st.divider()
     st.subheader("🤖 Robot Controls")
     
-    if st.button("▶️ Trigger Weekly Pipeline"):
+    # Add a refresh button to check latest run status
+    col_trigger, col_status = st.columns([1, 1])
+    
+    with col_trigger:
+        trigger_clicked = st.button("▶️ Trigger Weekly Pipeline", use_container_width=True)
+    
+    with col_status:
+        check_status_clicked = st.button("📊 Check Latest Run", use_container_width=True)
+    
+    if trigger_clicked:
         if not GITHUB_TOKEN or not REPO_OWNER:
             st.error("❌ Missing GitHub credentials in .env")
         else:
-            with st.spinner("Waking up the robot..."):
+            with st.status("🚀 Triggering Cloud Pipeline...", expanded=True) as status:
                 url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/dispatches"
                 headers = {
                     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -114,13 +124,91 @@ with st.sidebar:
                 try:
                     response = requests.post(url, json=data, headers=headers)
                     if response.status_code == 204:
-                        st.success("✅ Signal sent!")
-                        st.markdown(f"👉 [Watch Progress](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
+                        status.update(label="✅ Pipeline Triggered Successfully!", state="complete", expanded=True)
+                        st.success("🎯 **Pipeline workflow has been queued**")
+                        st.info("📊 The pipeline will:\n"
+                                "- Process files from landing zone\n"
+                                "- Validate data against schema\n"
+                                "- Quarantine invalid rows\n"
+                                "- Remove tombstoned records (sample_status='remove')\n"
+                                "- Upsert valid data into partitioned storage")
+                        st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
+                        st.caption("⏱️ Check the Actions tab to see processing status, logs, and any errors.")
                     else:
-                        st.error(f"❌ Failed: {response.status_code}")
-                        st.caption(response.text)
+                        status.update(label="❌ Failed to Trigger", state="error", expanded=True)
+                        st.error(f"**HTTP {response.status_code}**")
+                        with st.expander("📄 Response Details"):
+                            st.code(response.text, language="json")
                 except Exception as e:
-                    st.error(f"Connection Error: {e}")
+                    status.update(label="❌ Connection Error", state="error", expanded=True)
+                    st.error(f"**Failed to connect to GitHub API**")
+                    st.exception(e)
+    
+    # Check latest workflow run status
+    if check_status_clicked:
+        if not GITHUB_TOKEN or not REPO_OWNER:
+            st.error("❌ Missing GitHub credentials in .env")
+        else:
+            with st.status("📊 Fetching Latest Pipeline Run...", expanded=True) as status:
+                try:
+                    # Get latest workflow runs
+                    runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/runs"
+                    headers = {
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json"
+                    }
+                    
+                    response = requests.get(runs_url, headers=headers, params={"per_page": 1})
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        if data.get("total_count", 0) == 0:
+                            status.update(label="ℹ️ No Pipeline Runs Found", state="complete", expanded=True)
+                            st.info("No workflow runs found. Trigger the pipeline to see results here.")
+                        else:
+                            run = data["workflow_runs"][0]
+                            run_status = run["status"]
+                            run_conclusion = run.get("conclusion")
+                            run_id = run["id"]
+                            created_at = run["created_at"]
+                            updated_at = run["updated_at"]
+                            
+                            # Update status based on run state
+                            if run_status == "completed":
+                                if run_conclusion == "success":
+                                    status.update(label="✅ Latest Run: Success", state="complete", expanded=True)
+                                    st.success(f"**Pipeline completed successfully!**")
+                                    
+                                    st.caption(f"🕐 Started: {created_at}")
+                                    st.caption(f"✓ Completed: {updated_at}")
+                                    st.info("📄 View detailed logs and metrics on GitHub Actions")
+                                    
+                                elif run_conclusion == "failure":
+                                    status.update(label="❌ Latest Run: Failed", state="error", expanded=True)
+                                    st.error("**Pipeline failed!** Check the logs for details.")
+                                else:
+                                    status.update(label=f"⚠️ Latest Run: {run_conclusion}", state="complete", expanded=True)
+                                    st.warning(f"Pipeline ended with status: {run_conclusion}")
+                            elif run_status == "in_progress":
+                                status.update(label="🔄 Pipeline Running...", state="running", expanded=True)
+                                st.info("**Pipeline is currently running**")
+                                st.caption(f"🕐 Started: {created_at}")
+                            else:
+                                status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
+                                st.info(f"Current status: {run_status}")
+                            
+                            st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                            
+                    else:
+                        status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
+                        st.error(f"**HTTP {response.status_code}**")
+                        st.code(response.text, language="json")
+                        
+                except Exception as e:
+                    status.update(label="❌ Error", state="error", expanded=True)
+                    st.error("**Failed to fetch workflow status**")
+                    st.exception(e)
                     
     # LOGOUT BUTTON
     st.divider()
@@ -385,6 +473,9 @@ elif page == "🛠️ Fix Quarantine":
             blob_client = quarantine_client.get_blob_client(selected_file)
             stream = blob_client.download_blob().readall()
             df = pd.read_csv(io.BytesIO(stream), dtype=str)
+            
+            # Show column info
+            st.caption(f"📋 Columns: {', '.join(df.columns.tolist())}")
 
             if "pipeline_error" in df.columns:
                 unique_errors = df["pipeline_error"].unique()
@@ -470,3 +561,100 @@ elif page == "📊 Final Report":
                 file_name="final_cdc_export.csv",
                 mime="text/csv",
             )
+
+# ==========================================
+# PAGE 5: EXECUTION LOGS
+# ==========================================
+elif page == "📈 Execution Logs":
+    st.title("📈 Pipeline Execution History")
+    
+    st.info("""
+        This page shows the execution history of the data processing pipeline.
+        Each log entry captures metrics from a single pipeline run.
+    """)
+    
+    # List all log files
+    try:
+        log_blobs = list(logs_client.list_blobs())
+        
+        if not log_blobs:
+            st.warning("📭 No execution logs found. Run the pipeline to generate logs.")
+        else:
+            st.success(f"Found {len(log_blobs)} execution log(s)")
+            
+            # Load all logs into a single dataframe
+            all_logs = []
+            for blob in sorted(log_blobs, key=lambda x: x.name, reverse=True):  # Most recent first
+                try:
+                    blob_client = logs_client.get_blob_client(blob.name)
+                    log_data = blob_client.download_blob().readall()
+                    log_df = pd.read_csv(io.BytesIO(log_data))
+                    all_logs.append(log_df)
+                except Exception as e:
+                    st.warning(f"Could not read {blob.name}: {e}")
+            
+            if all_logs:
+                # Combine all logs
+                combined_logs = pd.concat(all_logs, ignore_index=True)
+                
+                # Sort by timestamp (most recent first)
+                combined_logs = combined_logs.sort_values('execution_timestamp', ascending=False)
+                
+                # Display summary metrics from most recent run
+                if len(combined_logs) > 0:
+                    latest = combined_logs.iloc[0]
+                    
+                    st.subheader("Latest Pipeline Run")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Files Processed", int(latest['files_processed']))
+                    with col2:
+                        st.metric("Rows Quarantined", int(latest['rows_quarantined']))
+                    with col3:
+                        st.metric("Rows Inserted", int(latest['rows_inserted']))
+                    with col4:
+                        st.metric("Rows Updated", int(latest['rows_updated']))
+                    
+                    col5, col6 = st.columns(2)
+                    with col5:
+                        st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
+                    with col6:
+                        st.metric("Total Rows", int(latest['total_rows']))
+                    
+                    st.caption(f"Executed at: {latest['execution_timestamp']}")
+                
+                # Show full history table
+                st.divider()
+                st.subheader("Execution History")
+                
+                # Format the dataframe for display
+                display_df = combined_logs.copy()
+                display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                
+                st.dataframe(
+                    display_df,
+                    width="stretch",
+                    hide_index=True,
+                    column_config={
+                        "execution_timestamp": "Timestamp",
+                        "files_processed": "Files",
+                        "rows_quarantined": "Quarantined",
+                        "rows_inserted": "Inserted",
+                        "rows_updated": "Updated",
+                        "rows_deleted": "Deleted",
+                        "total_rows": "Total Rows"
+                    }
+                )
+                
+                # Download option
+                csv_export = combined_logs.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 Download Full Log History",
+                    data=csv_export,
+                    file_name="pipeline_execution_history.csv",
+                    mime="text/csv"
+                )
+    
+    except Exception as e:
+        st.error(f"Failed to load execution logs: {e}")

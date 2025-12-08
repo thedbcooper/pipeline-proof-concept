@@ -18,7 +18,8 @@ INITIAL_STATE = {
             b"TEST-001,2025-12-01,POS,5000,keep\n"
             b"TEST-002,2025-12-02,NEG,0,keep"
         )
-    }
+    },
+    "logs": {}
 }
 
 def reset_mock_cloud():
