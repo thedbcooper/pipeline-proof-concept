@@ -1,21 +1,17 @@
 import duckdb
 from dotenv import load_dotenv
 import os
+from azure.identity import DefaultAzureCredential
+from azure.storage.blob import BlobServiceClient
 
-# Load credentials so DuckDB can see them
+# Load credentials
 load_dotenv()
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
+ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
 
-# Initialize DuckDB
+# --- 1. SETUP DUCKDB & AZURE CONNECTION ---
 con = duckdb.connect()
-
-# --- 1. SETUP AZURE CONNECTION ---
-# We install the 'azure' extension which teaches DuckDB how to talk to Blob Storage
-print("🔌 Configuring DuckDB for Azure...")
 con.sql("INSTALL azure; LOAD azure;")
-
-# We create a 'Secret' using the CREDENTIAL_CHAIN provider.
-# This tells DuckDB: "Look for the AZURE_CLIENT_ID/SECRET env vars I already have."
 con.sql(f"""
     CREATE SECRET (
         TYPE AZURE,
@@ -24,31 +20,11 @@ con.sql(f"""
     );
 """)
 
-# --- 2. THE MAGICAL QUERY ---
-# Notice the path: azure://<account>.blob.core.windows.net/data/*/*/data.csv
-# The wildcards (*/*) tell DuckDB to look in ALL year folders and ALL week folders.
-print("📊 Querying all partitions across history...")
+# --- 2. GENERATE CSV LOCALLY ---
+# We write to a temporary file on the runner first.
+local_filename = "temp_cdc_export.csv"
+print(f"📦 Generating report locally: {local_filename}...")
 
-# Let's run a quick analysis first (Aggregation)
-summary_df = con.sql(f"""
-    SELECT 
-        year,
-        count(*) as total_samples,
-        avg(viral_load)::int as avg_load
-    FROM read_csv_auto('azure://{ACCOUNT_NAME}.blob.core.windows.net/data/*/*/data.csv', hive_partitioning=1)
-    GROUP BY year
-    ORDER BY year DESC
-""").df()
-
-print("\n--- DATA SUMMARY ---")
-print(summary_df)
-print("--------------------\n")
-
-# --- 3. EXPORT SINGLE CSV (CDC REQUIREMENT) ---
-output_filename = "final_cdc_export.csv"
-print(f"📦 Generating cumulative export: {output_filename}...")
-
-# We select EVERYTHING and write to a single local CSV
 con.sql(f"""
     COPY (
         SELECT 
@@ -58,7 +34,21 @@ con.sql(f"""
             viral_load
         FROM read_csv_auto('azure://{ACCOUNT_NAME}.blob.core.windows.net/data/*/*/data.csv', hive_partitioning=1)
         ORDER BY test_date DESC
-    ) TO '{output_filename}' (FORMAT CSV, HEADER)
+    ) TO '{local_filename}' (FORMAT CSV, HEADER)
 """)
 
-print("✅ Export Complete! You can now upload this file to the CDC.")
+# --- 3. UPLOAD TO AZURE ROOT ---
+# Now we push that local file to the root of the 'data' container
+target_blob_name = "final_cdc_export.csv" 
+print(f"☁️  Uploading to Azure container 'data' as: {target_blob_name}...")
+
+# Connect to Azure Blob Storage
+credential = DefaultAzureCredential()
+blob_service = BlobServiceClient(ACCOUNT_URL, credential=credential)
+data_client = blob_service.get_container_client("data")
+
+# Upload (Overwrite if it exists)
+with open(local_filename, "rb") as data:
+    data_client.upload_blob(name=target_blob_name, data=data, overwrite=True)
+
+print("✅ Upload Complete! The file is ready in the root of your data container.")
