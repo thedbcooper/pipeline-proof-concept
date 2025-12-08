@@ -11,50 +11,6 @@ from dotenv import load_dotenv
 st.set_page_config(page_title="Lab Data Admin", layout="wide")
 load_dotenv()
 
-# ==========================================
-# 🔒 SECURITY GATE
-# ==========================================
-def check_password():
-    """Returns `True` if the user had the correct password."""
-    
-    # 1. Check Session State (Already logged in?)
-    if st.session_state.get("password_correct", False):
-        return True
-
-    # 2. Get the Secret Password (Supports Local .env OR Cloud Secrets)
-    # Priority: Streamlit Secrets -> Environment Variable -> Default
-    try:
-        stored_password = st.secrets["ADMIN_PASSWORD"]
-    except (FileNotFoundError, KeyError):
-        stored_password = os.getenv("ADMIN_PASSWORD")
-
-    if not stored_password:
-        st.error("⚠️ Server Configuration Error: ADMIN_PASSWORD not set.")
-        st.stop()
-
-    # 3. Show Login Form
-    st.header("🔒 Admin Access Required")
-    st.write("Please log in to manage the Lab Data Pipeline.")
-    
-    input_password = st.text_input("Enter Admin Password", type="password")
-    
-    if st.button("Log In"):
-        if input_password == stored_password:
-            st.session_state.password_correct = True
-            st.rerun() # Refresh to show the app
-        else:
-            st.error("❌ Incorrect Password")
-            
-    return False
-
-# 🛑 STOP HERE if not logged in
-if not check_password():
-    st.stop()
-
-# ==========================================
-# 🚀 MAIN APP (Only runs after Login)
-# ==========================================
-
 # Azure Config
 ACCOUNT_NAME = os.getenv("AZURE_STORAGE_ACCOUNT")
 ACCOUNT_URL = f"https://{ACCOUNT_NAME}.blob.core.windows.net"
