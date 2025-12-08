@@ -9,6 +9,7 @@ fix_me_please/
 
 # environment files
 .venv
+.vscode/
 
 # cache
 __pycache__/
