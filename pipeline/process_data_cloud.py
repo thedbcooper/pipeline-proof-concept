@@ -66,39 +66,6 @@ def process_pipeline():
 
         # VALIDATE LOOP
         for row in df.iter_rows(named=True):
-            # Check if this is a tombstone record (skip full validation)
-            if row.get('sample_status') == 'remove':
-                # For tombstone records, need sample_id, sample_status, and test_date
-                if 'sample_id' in row and 'test_date' in row:
-                    # Parse the test_date from string to date object
-                    try:
-                        if isinstance(row['test_date'], str):
-                            parsed_date = datetime.strptime(row['test_date'], '%Y-%m-%d').date()
-                        else:
-                            parsed_date = row['test_date']
-                        
-                        tombstone_record = {
-                            'sample_id': row['sample_id'],
-                            'test_date': parsed_date,
-                            # Add dummy values for other required fields
-                            'result': 'N/A',
-                            'viral_load': 0,
-                            'sample_status': 'remove',
-                        }
-                        all_valid_rows.append(tombstone_record)
-                    except (ValueError, KeyError) as e:
-                        bad_row = row
-                        bad_row['pipeline_error'] = f"Tombstone record has invalid test_date: {e}"
-                        bad_row['source_file'] = blob.name
-                        all_error_rows.append(bad_row)
-                else:
-                    bad_row = row
-                    bad_row['pipeline_error'] = "Tombstone record missing required fields: 'sample_id' and 'test_date'"
-                    bad_row['source_file'] = blob.name
-                    all_error_rows.append(bad_row)
-                continue
-            
-            # Normal validation for non-tombstone records
             try:
                 valid_sample = LabResult(**row)
                 all_valid_rows.append(valid_sample.model_dump())
@@ -170,15 +137,6 @@ def process_pipeline():
             log_entry['rows_inserted'] += new_inserts
             log_entry['rows_updated'] += updates
             
-            # Handle tombstone deletions: Remove rows with sample_status='remove'
-            if 'sample_status' in final_df.columns:
-                rows_before = len(final_df)
-                final_df = final_df.filter(pl.col("sample_status") != "remove")
-                rows_removed = rows_before - len(final_df)
-                if rows_removed > 0:
-                    log_entry['rows_deleted'] += rows_removed
-                    print(f"   Removed {rows_removed} tombstoned row(s)")
-            
             print(f"   Uploading Parquet ({len(final_df)} rows)...")
             
             # Fix 2: Write to buffer, then upload bytes
@@ -189,15 +147,12 @@ def process_pipeline():
         else:
             print(f"   Creating new Parquet file {blob_name}...")
             
-            # Filter out tombstones even for new files
-            final_batch = new_batch_df.filter(pl.col("sample_status") != "remove") if 'sample_status' in new_batch_df.columns else new_batch_df
-            
             # All rows in a new file are inserts
-            log_entry['rows_inserted'] += len(final_batch)
+            log_entry['rows_inserted'] += len(new_batch_df)
             
-            # Fix 2: Write to buffer, then upload bytes
+            # Write to buffer, then upload bytes
             output_stream = io.BytesIO()
-            final_batch.write_parquet(output_stream)
+            new_batch_df.write_parquet(output_stream)
             blob_client.upload_blob(output_stream.getvalue(), overwrite=True)
 
     print("✅ Cloud Pipeline Complete!")

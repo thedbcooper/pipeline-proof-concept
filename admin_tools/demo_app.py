@@ -103,29 +103,6 @@ def run_mock_pipeline():
             error_count = 0
             
             for index, row in df.iterrows():
-                # Check if this is a tombstone record (skip full validation)
-                if row.get('sample_status') == 'remove':
-                    # For tombstone records, only need sample_id and sample_status
-                    if pd.notna(row.get('sample_id')):
-                        tombstone_record = {
-                            'sample_id': row['sample_id'],
-                            'sample_status': 'remove',
-                            # Add dummy values for required fields
-                            'test_date': '2000-01-01',
-                            'result': 'N/A',
-                            'viral_load': 0
-                        }
-                        all_valid_rows.append(tombstone_record)
-                        valid_count += 1
-                    else:
-                        bad_row = row.to_dict()
-                        bad_row['pipeline_error'] = "Tombstone record missing 'sample_id'"
-                        bad_row['source_file'] = blob_prop.name
-                        all_error_rows.append(bad_row)
-                        error_count += 1
-                    continue
-                
-                # Normal validation for non-tombstone records
                 try:
                     # Pydantic validation
                     valid_sample = LabResult(**row.to_dict())
@@ -174,15 +151,6 @@ def run_mock_pipeline():
         
         full_df = pd.concat([history_df, new_batch])
         full_df = full_df.drop_duplicates(subset=["sample_id"], keep="last")
-        
-        # Handle tombstone deletions: Remove rows with sample_status='remove'
-        if 'sample_status' in full_df.columns:
-            rows_before_tombstone = len(full_df)
-            full_df = full_df[full_df['sample_status'] != 'remove']
-            rows_removed = rows_before_tombstone - len(full_df)
-            if rows_removed > 0:
-                metrics['rows_deleted'] = rows_removed
-                log.append(f"🗑️ Removed {rows_removed} tombstoned row(s)")
         
         if "test_date" in full_df.columns:
             full_df = full_df.sort_values("test_date", ascending=False)
@@ -248,7 +216,7 @@ with st.sidebar:
     # NAVIGATION
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "⚙️ Process & Monitor", "📊 Final Report"],
+        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "🗑️ Delete Records", "⚙️ Process & Monitor", "📊 Final Report"],
         key="nav_selection"
     )
 
@@ -359,7 +327,6 @@ elif page == "📤 Upload New Data":
     # Show success message after rerun
     if st.session_state.upload_success:
         st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar.")
-        st.balloons()
         st.session_state.upload_success = False
     
     st.divider()
@@ -420,6 +387,7 @@ elif page == "⚙️ Process & Monitor":
                     
                     # Display summary
                     st.success("✨ **Pipeline executed successfully!**")
+                    st.balloons()
                     
                     col1, col2, col3, col4, col5 = st.columns(5)
                     with col1:
@@ -432,9 +400,6 @@ elif page == "⚙️ Process & Monitor":
                         st.metric("Rows Updated", rows_updated)
                     with col5:
                         st.metric("⚠️ Rows Deleted", rows_deleted, delta=None if rows_deleted == '0' else f"-{rows_deleted}", delta_color="inverse")
-                    
-                    if rows_deleted != '0':
-                        st.warning(f"🗑️ **{rows_deleted} row(s) were permanently removed** due to sample_status='remove'")
                 else:
                     # Fallback to old parsing method
                     st.success("✨ **Pipeline executed successfully!**")
@@ -596,7 +561,99 @@ elif page == "⚙️ Process & Monitor":
         st.error(f"Failed to load execution logs: {e}")
 
 # ==========================================
-# PAGE 3: FIX QUARANTINE
+# PAGE 3: DELETE RECORDS
+# ==========================================
+elif page == "🗑️ Delete Records":
+    st.title("🗑️ Delete Records from Data Storage")
+    st.caption("Upload a CSV with sample_id and test_date to permanently remove records")
+    
+    st.info("""
+    **How it works:**
+    1. Upload a CSV file containing two columns: `sample_id` and `test_date`
+    2. The system will find matching records across all partitions
+    3. Matching records will be permanently deleted from the data storage
+    4. Updated parquet files will be saved back to storage
+    """)
+    
+    st.warning("⚠️ **Warning:** Deletions are permanent and cannot be undone!")
+    
+    st.divider()
+    
+    # File uploader for deletion requests
+    deletion_file = st.file_uploader(
+        "Upload Deletion Request CSV",
+        type="csv",
+        help="CSV must contain 'sample_id' and 'test_date' columns"
+    )
+    
+    if deletion_file:
+        try:
+            # Preview the deletion request
+            deletion_df = pd.read_csv(deletion_file, dtype=str)
+            
+            # Validate columns
+            if 'sample_id' not in deletion_df.columns or 'test_date' not in deletion_df.columns:
+                st.error("❌ CSV must contain both 'sample_id' and 'test_date' columns!")
+            else:
+                st.success(f"✅ Found {len(deletion_df)} record(s) to delete")
+                
+                st.subheader("📋 Preview Deletion Request")
+                st.dataframe(deletion_df, width="stretch")
+                
+                st.divider()
+                
+                # Confirm deletion
+                if st.button("⚠️ Process Deletions", type="primary"):
+                    with st.status("Processing deletions...", expanded=True) as status:
+                        try:
+                            # Upload to deletion-requests container (mock)
+                            from datetime import datetime
+                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                            filename = f"deletion_request_{timestamp}.csv"
+                            
+                            # In demo mode, we'll simulate the deletion process
+                            st.write(f"📤 Uploading deletion request: {filename}")
+                            
+                            # Simulate processing
+                            import time
+                            time.sleep(1)
+                            
+                            # Parse test_date and calculate partitions
+                            deletion_df['test_date'] = pd.to_datetime(deletion_df['test_date'])
+                            deletion_df['partition'] = deletion_df['test_date'].apply(
+                                lambda x: f"year={x.year}/week={x.isocalendar()[1]}"
+                            )
+                            
+                            unique_partitions = deletion_df['partition'].unique()
+                            st.write(f"🔍 Checking {len(unique_partitions)} partition(s)...")
+                            
+                            total_deleted = 0
+                            
+                            # Simulate deletion from each partition
+                            for partition in unique_partitions:
+                                partition_deletions = deletion_df[deletion_df['partition'] == partition]
+                                st.write(f"  Processing {partition}: {len(partition_deletions)} deletion(s)")
+                                total_deleted += len(partition_deletions)
+                                time.sleep(0.3)
+                            
+                            status.update(label="✅ Deletions Complete!", state="complete")
+                            st.success(f"🗑️ Successfully deleted {total_deleted} record(s)!")
+                            
+                            # Clear the uploader
+                            st.info("💡 **Note:** In production, this would trigger the delete_records.py script via GitHub Actions")
+                            
+                        except Exception as e:
+                            status.update(label="❌ Deletion Failed", state="error")
+                            st.error(f"Failed to process deletions: {e}")
+                            st.exception(e)
+        
+        except Exception as e:
+            st.error(f"Error reading CSV file: {e}")
+    else:
+        st.info("📭 No file uploaded. Upload a CSV to begin.")
+
+# ==========================================
+# PAGE 4: FIX QUARANTINE
 # ==========================================
 elif page == "🛠️ Fix Quarantine":
     st.title("🛠️ Quarantine Manager")
@@ -711,11 +768,10 @@ elif page == "🛠️ Fix Quarantine":
         # Show success message after rerun
         if st.session_state.upload_success:
             st.success("✨ Done! All fixed files uploaded to Landing Zone.")
-            st.balloons()
             st.session_state.upload_success = False
 
 # ==========================================
-# PAGE 4: FINAL REPORT
+# PAGE 5: FINAL REPORT
 # ==========================================
 elif page == "📊 Final Report":
     st.title("📊 CDC Final Export Review")

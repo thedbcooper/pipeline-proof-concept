@@ -40,8 +40,7 @@ for i in range(WEEKS_TO_GENERATE):
         'test_date': [date_str for _ in range(SAMPLES_PER_WEEK)],
         # Sprinkle in some "POS" and maybe a typo ("Positive") to test validation
         'result': [random.choice(['POS', 'NEG', 'NEG', 'N/A', 'Positive']) for _ in range(SAMPLES_PER_WEEK)],
-        'viral_load': [random.randint(0, 5000) for _ in range(SAMPLES_PER_WEEK)],
-        'sample_status': ['keep' for _ in range(SAMPLES_PER_WEEK)]
+        'viral_load': [random.randint(0, 5000) for _ in range(SAMPLES_PER_WEEK)]
     }
     
     # Create Polars DataFrame

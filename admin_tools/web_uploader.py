@@ -51,7 +51,7 @@ with st.sidebar:
     
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "⚙️ Process & Monitor", "📊 Final Report"],
+        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "🗑️ Delete Records", "⚙️ Process & Monitor", "📊 Final Report"],
         key="nav_selection"
     )
 
@@ -165,7 +165,6 @@ if page == "📤 Upload New Data":
     # Show success message after rerun
     if st.session_state.upload_success:
         st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar or wait for automatic runs.")
-        st.balloons()
         st.session_state.upload_success = False
     
     st.divider()
@@ -229,7 +228,6 @@ elif page == "⚙️ Process & Monitor":
                                 "- Process files from landing zone\n"
                                 "- Validate data against schema\n"
                                 "- Quarantine invalid rows\n"
-                                "- Remove tombstoned records (sample_status='remove')\n"
                                 "- Upsert valid data into partitioned storage")
                         st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
                         st.caption("⏱️ Check the Actions tab to see processing status, logs, and any errors.")
@@ -456,7 +454,97 @@ elif page == "⚙️ Process & Monitor":
         st.error(f"Failed to load execution logs: {e}")
 
 # ==========================================
-# PAGE 3: FIX QUARANTINE
+# PAGE 3: DELETE RECORDS
+# ==========================================
+elif page == "🗑️ Delete Records":
+    st.title("🗑️ Delete Records from Data Storage")
+    st.caption("Upload a CSV with sample_id and test_date to permanently remove records")
+    
+    st.info("""
+    **How it works:**
+    1. Upload a CSV file containing two columns: `sample_id` and `test_date`
+    2. File is uploaded to the deletion-requests container
+    3. Trigger the deletion workflow via GitHub Actions
+    4. The system will find matching records across all partitions and delete them
+    5. Updated parquet files will be saved back to storage
+    """)
+    
+    st.warning("⚠️ **Warning:** Deletions are permanent and cannot be undone!")
+    
+    st.divider()
+    
+    # File uploader for deletion requests
+    deletion_file = st.file_uploader(
+        "Upload Deletion Request CSV",
+        type="csv",
+        help="CSV must contain 'sample_id' and 'test_date' columns"
+    )
+    
+    if deletion_file:
+        try:
+            # Preview the deletion request
+            deletion_df = pd.read_csv(deletion_file, dtype=str)
+            
+            # Validate columns
+            if 'sample_id' not in deletion_df.columns or 'test_date' not in deletion_df.columns:
+                st.error("❌ CSV must contain both 'sample_id' and 'test_date' columns!")
+            else:
+                st.success(f"✅ Found {len(deletion_df)} record(s) to delete")
+                
+                st.subheader("📋 Preview Deletion Request")
+                st.dataframe(deletion_df, width="stretch")
+                
+                st.divider()
+                
+                # Upload button
+                if st.button("📤 Upload Deletion Request", type="primary"):
+                    try:
+                        from datetime import datetime
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"deletion_request_{timestamp}.csv"
+                        
+                        # Get deletion-requests container client
+                        deletion_client = blob_service.get_container_client("deletion-requests")
+                        
+                        # Upload the deletion request
+                        csv_data = deletion_df.to_csv(index=False).encode('utf-8')
+                        deletion_client.upload_blob(filename, csv_data, overwrite=True)
+                        
+                        st.success(f"✅ Uploaded deletion request: `{filename}`")
+                        st.info("""
+                        **Next Steps:**
+                        1. Go to **⚙️ Process & Monitor** tab
+                        2. Trigger the deletion workflow via GitHub Actions
+                        3. Monitor the deletion process in the GitHub Actions log
+                        """)
+                        
+                    except Exception as e:
+                        st.error(f"Failed to upload deletion request: {e}")
+        
+        except Exception as e:
+            st.error(f"Error reading CSV file: {e}")
+    else:
+        st.info("📭 No file uploaded. Upload a CSV to begin.")
+    
+    st.divider()
+    
+    # Show existing deletion requests
+    st.subheader("📦 Pending Deletion Requests")
+    try:
+        deletion_client = blob_service.get_container_client("deletion-requests")
+        deletion_blobs = list(deletion_client.list_blobs())
+        
+        if not deletion_blobs:
+            st.info("📭 No pending deletion requests")
+        else:
+            st.warning(f"⚠️ Found {len(deletion_blobs)} pending deletion request(s)")
+            for blob in deletion_blobs:
+                st.text(f"📄 {blob.name}")
+    except Exception as e:
+        st.error(f"Failed to check deletion requests: {e}")
+
+# ==========================================
+# PAGE 4: FIX QUARANTINE
 # ==========================================
 elif page == "🛠️ Fix Quarantine":
     st.title("🛠️ Quarantine Manager")
@@ -587,11 +675,10 @@ elif page == "🛠️ Fix Quarantine":
         # Show success message after rerun
         if st.session_state.upload_success:
             st.success("✨ Done! All fixed files uploaded to Landing Zone.")
-            st.balloons()
             st.session_state.upload_success = False
 
 # ==========================================
-# PAGE 4: FINAL REPORT
+# PAGE 5: FINAL REPORT
 # ==========================================
 elif page == "📊 Final Report":
     st.title("📊 CDC Final Export Review")
