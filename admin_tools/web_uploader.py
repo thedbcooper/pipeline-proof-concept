@@ -26,60 +26,6 @@ if "upload_counter" not in st.session_state:
 if "upload_success" not in st.session_state:
     st.session_state.upload_success = False
 
-# --- HELPER FUNCTIONS ---
-def fetch_workflow_logs(run_id):
-    """Fetch logs from a GitHub Actions workflow run."""
-    try:
-        # Get jobs for this run
-        jobs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id}/jobs"
-        headers = {
-            "Authorization": f"Bearer {GITHUB_TOKEN}",
-            "Accept": "application/vnd.github.v3+json"
-        }
-        
-        response = requests.get(jobs_url, headers=headers)
-        if response.status_code != 200:
-            return None
-        
-        jobs = response.json().get("jobs", [])
-        if not jobs:
-            return None
-        
-        # Get logs for the first job
-        job_id = jobs[0]["id"]
-        logs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/jobs/{job_id}/logs"
-        
-        log_response = requests.get(logs_url, headers=headers)
-        if log_response.status_code == 200:
-            return log_response.text
-        
-        return None
-    except Exception as e:
-        print(f"Error fetching logs: {e}")
-        return None
-
-def parse_pipeline_summary(logs):
-    """Extract pipeline summary from GitHub Action logs."""
-    if not logs:
-        return None
-    
-    lines = logs.split('\n')
-    summary_lines = []
-    in_summary = False
-    
-    for line in lines:
-        # Look for summary section markers
-        if '=' * 60 in line:
-            in_summary = not in_summary
-            continue
-        if in_summary or 'PIPELINE COMPLETE' in line or 'SUMMARY:' in line:
-            summary_lines.append(line)
-        # Also capture key processing lines
-        elif any(marker in line for marker in ['✅ Processed', '📊 Processing', '➕ New records', '📥 Downloading', '⚠️ Uploading errors']):
-            summary_lines.append(line)
-    
-    return '\n'.join(summary_lines) if summary_lines else None
-
 # --- AZURE CONNECTION ---
 @st.cache_resource
 def get_blob_service():
@@ -330,19 +276,7 @@ elif page == "⚙️ Process & Monitor":
                                     
                                     st.caption(f"🕐 Started: {created_at}")
                                     st.caption(f"✓ Completed: {updated_at}")
-                                    
-                                    # Fetch and display logs
-                                    with st.spinner("Fetching pipeline logs..."):
-                                        logs = fetch_workflow_logs(run_id)
-                                        if logs:
-                                            summary = parse_pipeline_summary(logs)
-                                            if summary:
-                                                st.subheader("📋 Pipeline Output")
-                                                st.code(summary, language="text")
-                                            else:
-                                                st.info("No summary available in logs")
-                                        else:
-                                            st.info("📄 View detailed logs on GitHub Actions")
+                                    st.info("📊 View detailed metrics in Pipeline Execution History below")
                                     
                                 elif run_conclusion == "failure":
                                     status.update(label="❌ Latest Run: Failed", state="error", expanded=True)
@@ -484,6 +418,13 @@ elif page == "⚙️ Process & Monitor":
                         st.metric("Rows Updated", int(latest['rows_updated']))
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
+                    
+                    # Display processing details if available
+                    if 'processing_details' in latest and latest['processing_details']:
+                        st.subheader("📋 Processing Details")
+                        details = latest['processing_details'].split(' | ')
+                        for detail in details:
+                            st.text(f"  • {detail}")
                 
                 # Show full history table
                 with st.expander("📊 View Full Execution History"):
@@ -491,8 +432,12 @@ elif page == "⚙️ Process & Monitor":
                     display_df = combined_logs.copy()
                     display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
                     
+                    # Show main metrics table (without processing_details column)
+                    metrics_columns = ['execution_timestamp', 'files_processed', 'rows_quarantined', 'rows_inserted', 'rows_updated']
+                    display_metrics = display_df[metrics_columns] if all(col in display_df.columns for col in metrics_columns) else display_df
+                    
                     st.dataframe(
-                        display_df,
+                        display_metrics,
                         width="stretch",
                         hide_index=True,
                         column_config={
@@ -503,6 +448,16 @@ elif page == "⚙️ Process & Monitor":
                             "rows_updated": "Updated"
                         }
                     )
+                    
+                    # Show processing details for each run
+                    if 'processing_details' in display_df.columns:
+                        st.write("**Processing Details by Run:**")
+                        for idx, row in display_df.iterrows():
+                            if row['processing_details']:
+                                with st.expander(f"Run at {row['execution_timestamp']}"):
+                                    details = row['processing_details'].split(' | ')
+                                    for detail in details:
+                                        st.text(f"  • {detail}")
                     
                     # Download option
                     csv_export = combined_logs.to_csv(index=False).encode('utf-8')
