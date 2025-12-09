@@ -421,10 +421,11 @@ elif page == "⚙️ Process & Monitor":
                     
                     # Display processing details if available
                     if 'processing_details' in latest and latest['processing_details']:
+                        st.divider()
                         st.subheader("📋 Processing Details")
                         details = latest['processing_details'].split(' | ')
                         for detail in details:
-                            st.text(f"  • {detail}")
+                            st.markdown(f"{detail}")
                 
                 # Show full history table
                 with st.expander("📊 View Full Execution History"):
@@ -451,13 +452,14 @@ elif page == "⚙️ Process & Monitor":
                     
                     # Show processing details for each run
                     if 'processing_details' in display_df.columns:
-                        st.write("**Processing Details by Run:**")
+                        st.divider()
+                        st.write("**📋 Processing Details by Run:**")
                         for idx, row in display_df.iterrows():
                             if row['processing_details']:
-                                with st.expander(f"Run at {row['execution_timestamp']}"):
+                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
                                     details = row['processing_details'].split(' | ')
                                     for detail in details:
-                                        st.text(f"  • {detail}")
+                                        st.markdown(f"{detail}")
                     
                     # Download option
                     csv_export = combined_logs.to_csv(index=False).encode('utf-8')

@@ -43,13 +43,13 @@ def process_pipeline():
     
     if not blobs:
         print("📭 No new files in landing-zone.")
-        processing_log.append("No new files to process")
+        processing_log.append("📭 No new files to process")
         # Log even empty runs
         _save_execution_log(log_entry, processing_log)
         return
 
     print(f"found {len(blobs)} files to process...")
-    processing_log.append(f"Found {len(blobs)} file(s) in landing zone")
+    processing_log.append(f"📦 Found {len(blobs)} file(s) in landing zone")
     log_entry['files_processed'] = len(blobs)
 
     all_valid_rows = []
@@ -84,7 +84,7 @@ def process_pipeline():
                 error_count += 1
         
         print(f"✅ Processed {blob.name}: {valid_count} valid, {error_count} errors")
-        processing_log.append(f"Processed {blob.name}: {valid_count} valid, {error_count} errors")
+        processing_log.append(f"✅ Processed {blob.name}: {valid_count} valid, {error_count} errors")
         print(f"🗑️ Deleting {blob.name} from landing-zone...")
         blob_client.delete_blob()
 
@@ -96,12 +96,12 @@ def process_pipeline():
         
         log_entry['rows_quarantined'] = len(all_error_rows)
         print(f"⚠️ Uploading errors to {filename}...")
-        processing_log.append(f"Quarantined {len(all_error_rows)} row(s) to {filename}")
+        processing_log.append(f"⚠️ Quarantined {len(all_error_rows)} row(s) to {filename}")
         quarantine_client.upload_blob(filename, error_df.write_csv(), overwrite=True)
 
     if not all_valid_rows:
         print("No valid data to upsert.")
-        processing_log.append("No valid data to process")
+        processing_log.append("ℹ️ No valid data to process")
         _save_execution_log(log_entry, processing_log)
         return
 
@@ -117,7 +117,7 @@ def process_pipeline():
 
     unique_partitions = full_df["partition_path"].unique().to_list()
     print(f"\n📊 Processing {len(all_valid_rows)} valid records across {len(unique_partitions)} partition(s)...")
-    processing_log.append(f"Processing {len(all_valid_rows)} valid record(s) across {len(unique_partitions)} partition(s)")
+    processing_log.append(f"📊 Processing {len(all_valid_rows)} valid record(s) across {len(unique_partitions)} partition(s)")
 
     for part_path in unique_partitions:
         print(f"\n📁 Processing partition: {part_path}")
@@ -152,7 +152,7 @@ def process_pipeline():
             log_entry['rows_inserted'] += new_inserts
             log_entry['rows_updated'] += updates
             
-            processing_log.append(f"{part_path}: {new_inserts} inserted, {updates} updated")
+            processing_log.append(f"   📁 {part_path}: ➕ {new_inserts} inserted, 🔄 {updates} updated")
             print(f"   ➕ New records: {new_inserts}, 🔄 Updated: {updates}")
             print(f"   💾 Uploading Parquet ({len(final_df)} total rows)...")
             
@@ -167,7 +167,7 @@ def process_pipeline():
             # All rows in a new file are inserts
             log_entry['rows_inserted'] += len(new_batch_df)
             
-            processing_log.append(f"{part_path}: {len(new_batch_df)} inserted (new partition)")
+            processing_log.append(f"   📁 {part_path}: ➕ {len(new_batch_df)} inserted (new partition)")
             
             # Write to buffer, then upload bytes
             output_stream = io.BytesIO()
