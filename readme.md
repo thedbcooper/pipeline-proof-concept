@@ -16,14 +16,27 @@ An automated, serverless data pipeline designed to ingest, validate, and aggrega
 
 ## 🏗️ Architecture
 
-1.  **Landing Zone:** Partners upload raw CSVs via the Admin Console.
-2.  **The Robot (Pipeline):** A GitHub Action triggers the processing script.
-      * **Validation:** Uses `Pydantic` to enforce strict schema (e.g., `viral_load` must be int).
-      * **Routing:** Good data $\rightarrow$ Data Lake (Parquet). Bad data $\rightarrow$ Quarantine (CSV).
-      * **Logging:** Detailed processing logs with metrics saved to CSV for audit trail.
-3.  **Quarantine Loop:** Admins review rejected files in the Streamlit UI, fix errors (e.g., "Positive" $\rightarrow$ "POS"), and promote them back to the Landing Zone.
-4.  **Deletion Workflow:** Upload CSV with sample_id and test_date to permanently remove records from partitioned data.
-5.  **Reporting:** Clean data is aggregated into a master CDC Export file with full execution history.
+### Core Data Flow
+
+1.  **Landing Zone:** User uploads raw CSVs via Streamlit Admin Console → `landing-zone` container.
+2.  **Automated Processing (GitHub Actions):** `weekly_pipeline.yaml` triggers on schedule or manual dispatch.
+      * **Validation:** `Pydantic` enforces strict schema (sample_id, test_date, result, viral_load).
+      * **Routing:** Valid data → `data` container (partitioned Parquet by week). Invalid data → `quarantine` container (CSV).
+      * **Logging:** Emoji-rich processing logs with detailed metrics saved to `logs` container as `execution_TIMESTAMP.csv`.
+3.  **Quarantine Resolution:** Admins review errors in UI, fix data (e.g., "Positive" → "POS"), reupload to `landing-zone` for automatic reprocessing.
+4.  **Deletion Workflow:** Two-step process for permanent record removal:
+      * Upload deletion request CSV (sample_id + test_date) → `deletion-requests` container
+      * Trigger `delete_records.yaml` GitHub Action → removes from partitioned data
+      * Logs deleted sample IDs to `logs` container as `deletion_TIMESTAMP.csv`
+5.  **Reporting:** Aggregated clean data exported to `final_cdc_export.csv` with complete audit trail.
+
+### Storage Containers
+
+- **landing-zone**: Raw CSV uploads from partners
+- **quarantine**: Invalid records awaiting manual review
+- **data**: Validated records in partitioned Parquet format (year=YYYY/week=WW/)
+- **logs**: Processing and deletion execution logs (CSV with processing_details)
+- **deletion-requests**: Pending deletion requests (CSV with sample_id and test_date)
 
 -----
 
