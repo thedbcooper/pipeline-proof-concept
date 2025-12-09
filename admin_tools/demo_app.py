@@ -219,6 +219,10 @@ def run_mock_deletions(pending_deletions):
     
     log.append(f"🔍 Total unique IDs to delete: {len(all_ids_to_delete)}")
     
+    # Find which IDs actually exist in the data
+    existing_ids = set(current_df['sample_id'].tolist())
+    ids_to_actually_delete = all_ids_to_delete.intersection(existing_ids)
+    
     # Filter out records to delete
     filtered_df = current_df[~current_df['sample_id'].isin(all_ids_to_delete)]
     
@@ -230,7 +234,10 @@ def run_mock_deletions(pending_deletions):
         csv_out = filtered_df.to_csv(index=False).encode('utf-8')
         report_blob.upload_blob(csv_out, overwrite=True)
         partitions_updated = 1  # Mock: treating the whole CSV as one "partition"
-        log.append(f"✅ Removed {rows_deleted} record(s)")
+        
+        # Log which IDs were deleted
+        ids_str = ', '.join(sorted(ids_to_actually_delete))
+        log.append(f"🗑️ Deleted {rows_deleted} record(s) | 🆔 IDs: {ids_str}")
         log.append(f"📊 Remaining records: {len(filtered_df)}")
     else:
         log.append("ℹ️ No matching records found to delete")

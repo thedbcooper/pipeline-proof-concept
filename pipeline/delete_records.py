@@ -29,6 +29,7 @@ def process_deletions():
     
     # Initialize deletion log
     execution_start = datetime.now()
+    processing_log = []  # Track detailed processing events
     log_entry = {
         'execution_timestamp': execution_start.isoformat(),
         'files_processed': 0,
@@ -41,17 +42,19 @@ def process_deletions():
     
     if not deletion_blobs:
         print("📭 No deletion requests found.")
-        _save_deletion_log(log_entry)
+        processing_log.append("📭 No deletion requests found")
+        _save_deletion_log(log_entry, processing_log)
         return
     
-    print(f"Found {len(deletion_blobs)} deletion request file(s)...")
+    print(f"📦 Found {len(deletion_blobs)} deletion request file(s)...")
+    processing_log.append(f"📦 Found {len(deletion_blobs)} deletion request file(s)")
     log_entry['files_processed'] = len(deletion_blobs)
     
     # Collect all deletion requests
     all_deletions = []
     
     for blob in deletion_blobs:
-        print(f"Reading {blob.name}...")
+        print(f"✅ Reading {blob.name}...")
         
         blob_client = deletion_client.get_blob_client(blob.name)
         downloaded_bytes = blob_client.download_blob().readall()
@@ -63,6 +66,7 @@ def process_deletions():
             # Validate required columns
             if 'sample_id' not in df.columns or 'test_date' not in df.columns:
                 print(f"⚠️ Skipping {blob.name}: Missing required columns (sample_id, test_date)")
+                processing_log.append(f"⚠️ Skipped {blob.name}: Missing required columns")
                 continue
             
             # Select only needed columns and parse test_date
@@ -72,23 +76,28 @@ def process_deletions():
             )
             
             all_deletions.append(deletion_df)
+            processing_log.append(f"✅ Processed {blob.name}: {len(deletion_df)} deletion request(s)")
             
             # Delete processed request file
-            print(f"Deleting {blob.name} from deletion-requests...")
+            print(f"🗑️ Deleting {blob.name} from deletion-requests...")
             blob_client.delete_blob()
             
         except Exception as e:
             print(f"❌ Error processing {blob.name}: {e}")
+            processing_log.append(f"❌ Error processing {blob.name}: {str(e)}")
             continue
     
     if not all_deletions:
-        print("No valid deletion requests to process.")
-        _save_deletion_log(log_entry)
+        print("❌ No valid deletion requests to process.")
+        processing_log.append("❌ No valid deletion requests to process")
+        _save_deletion_log(log_entry, processing_log)
         return
     
     # Combine all deletion requests
     deletions_df = pl.concat(all_deletions)
-    print(f"Total deletion requests: {len(deletions_df)}")
+    unique_ids = deletions_df["sample_id"].unique().to_list()
+    print(f"🔍 Total unique deletion requests: {len(unique_ids)}")
+    processing_log.append(f"🔍 Total unique deletion requests: {len(unique_ids)}")
     
     # 2. CALCULATE PARTITIONS TO CHECK
     # Add partition path to deletion requests
@@ -99,14 +108,15 @@ def process_deletions():
     )
     
     unique_partitions = deletions_df["partition_path"].unique().to_list()
-    print(f"Checking {len(unique_partitions)} partition(s)...")
+    print(f"📊 Checking {len(unique_partitions)} partition(s)...")
+    processing_log.append(f"📊 Checking {len(unique_partitions)} partition(s)")
     
     # 3. PROCESS EACH PARTITION
     total_deleted = 0
     partitions_updated = 0
     
     for part_path in unique_partitions:
-        print(f"\nProcessing partition: {part_path}")
+        print(f"\n📁 Processing partition: {part_path}")
         
         # Get deletion IDs for this partition
         partition_deletions = deletions_df.filter(pl.col("partition_path") == part_path)
@@ -118,16 +128,22 @@ def process_deletions():
         
         if not blob_client.exists():
             print(f"  ⚠️ Partition file not found: {blob_name}")
+            processing_log.append(f"📁 {part_path}: ⚠️ Partition file not found")
             continue
         
         # Download existing data
-        print(f"  Downloading {blob_name}...")
+        print(f"  ⬇️ Downloading {blob_name}...")
         download_stream = blob_client.download_blob()
         history_df = pl.read_parquet(io.BytesIO(download_stream.readall()))
         
         rows_before = len(history_df)
         
-        # Filter out records to delete
+        # Filter out records to delete and track which IDs were actually deleted
+        deleted_ids = []
+        for sample_id in ids_to_delete:
+            if sample_id in history_df["sample_id"]:
+                deleted_ids.append(sample_id)
+        
         filtered_df = history_df.filter(~pl.col("sample_id").is_in(ids_to_delete))
         
         rows_after = len(filtered_df)
@@ -135,8 +151,13 @@ def process_deletions():
         
         if rows_deleted > 0:
             print(f"  🗑️ Removing {rows_deleted} record(s)...")
+            print(f"  🆔 Deleted sample_ids: {', '.join(deleted_ids)}")
             total_deleted += rows_deleted
             partitions_updated += 1
+            
+            # Log detailed deletion info with sample IDs
+            ids_str = ', '.join(deleted_ids)
+            processing_log.append(f"📁 {part_path}: 🗑️ Deleted {rows_deleted} record(s) | 🆔 IDs: {ids_str} | 📊 {rows_after} rows remaining")
             
             # Upload updated parquet
             output_stream = io.BytesIO()
@@ -145,22 +166,27 @@ def process_deletions():
             print(f"  ✅ Updated {blob_name} ({rows_after} rows remaining)")
         else:
             print(f"  ℹ️ No matching records found in this partition")
+            processing_log.append(f"📁 {part_path}: ℹ️ No matching records found")
     
     log_entry['rows_deleted'] = total_deleted
     log_entry['partitions_updated'] = partitions_updated
     
     print(f"\n✅ Deletion Complete!")
-    print(f"   Total rows deleted: {total_deleted}")
-    print(f"   Partitions updated: {partitions_updated}")
+    print(f"   📊 Total rows deleted: {total_deleted}")
+    print(f"   📁 Partitions updated: {partitions_updated}")
+    processing_log.append(f"✅ Deletion Complete: {total_deleted} rows deleted across {partitions_updated} partition(s)")
     
     # Save deletion log
-    _save_deletion_log(log_entry)
+    _save_deletion_log(log_entry, processing_log)
 
-def _save_deletion_log(log_entry):
+def _save_deletion_log(log_entry, processing_log):
     """Save deletion log to logs container as CSV."""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_filename = f"deletion_{timestamp}.csv"
+        
+        # Add processing details to log entry
+        log_entry['processing_details'] = ' | '.join(processing_log)
         
         # Convert log to DataFrame and CSV
         log_df = pl.DataFrame([log_entry])

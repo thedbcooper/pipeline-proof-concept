@@ -376,7 +376,9 @@ elif page == "⚙️ Process & Monitor":
     st.caption("Metrics from previous pipeline runs")
     
     try:
-        log_blobs = list(logs_client.list_blobs())
+        # Get all logs and filter out deletion logs
+        all_log_blobs = list(logs_client.list_blobs())
+        log_blobs = [blob for blob in all_log_blobs if blob.name.startswith('execution_')]
         
         if not log_blobs:
             st.info("📭 No execution logs found. Run the pipeline to generate logs.")
@@ -493,11 +495,16 @@ elif page == "🗑️ Delete Records":
     
     st.divider()
     
+    # Initialize session state for uploader key
+    if 'deletion_uploader_key' not in st.session_state:
+        st.session_state.deletion_uploader_key = 0
+    
     # File uploader for deletion requests
     deletion_file = st.file_uploader(
         "Upload Deletion Request CSV",
         type="csv",
-        help="CSV must contain 'sample_id' and 'test_date' columns"
+        help="CSV must contain 'sample_id' and 'test_date' columns",
+        key=f"deletion_uploader_{st.session_state.deletion_uploader_key}"
     )
     
     if deletion_file:
@@ -533,10 +540,14 @@ elif page == "🗑️ Delete Records":
                         st.success(f"✅ Uploaded deletion request: `{filename}`")
                         st.info("""
                         **Next Steps:**
-                        1. Go to **⚙️ Process & Monitor** tab
-                        2. Trigger the deletion workflow via GitHub Actions
-                        3. Monitor the deletion process in the GitHub Actions log
+                        1. Scroll down to **🚀 Process Deletions** section
+                        2. Trigger the deletion workflow
+                        3. Check deletion status and logs below
                         """)
+                        
+                        # Reset the file uploader
+                        st.session_state.deletion_uploader_key += 1
+                        st.rerun()
                         
                     except Exception as e:
                         st.error(f"Failed to upload deletion request: {e}")
@@ -566,33 +577,41 @@ elif page == "🗑️ Delete Records":
             st.divider()
             
             # Preview pending deletion files
-            if deletion_blobs:
-                st.subheader("📋 Preview Deletion Requests")
-                selected_deletion_file = st.selectbox(
-                    "Select file to preview:",
-                    [blob.name for blob in deletion_blobs],
-                    key="deletion_preview_selector"
-                )
-                
-                if selected_deletion_file:
-                    blob_client = deletion_client.get_blob_client(selected_deletion_file)
-                    try:
-                        data = blob_client.download_blob().readall()
-                        preview_df = pd.read_csv(io.BytesIO(data))
-                        st.caption(f"Showing all rows of **{selected_deletion_file}**")
-                        st.dataframe(preview_df, width="stretch")
-                        
-                        # Show summary
-                        st.info(f"📊 Total records to delete: **{len(preview_df)}**")
-                        
-                    except Exception as e:
-                        st.error(f"Error reading file: {e}")
+            st.subheader("📋 Preview Deletion Requests")
+            selected_deletion_file = st.selectbox(
+                "Select file to preview:",
+                [blob.name for blob in deletion_blobs],
+                key="deletion_preview_selector"
+            )
             
-            st.divider()
-            
-            # Trigger deletion workflow button
-            st.subheader("🚀 Process Deletions")
-            if st.button("▶️ Trigger Delete Records Workflow", type="primary", use_container_width=True):
+            if selected_deletion_file:
+                blob_client = deletion_client.get_blob_client(selected_deletion_file)
+                try:
+                    data = blob_client.download_blob().readall()
+                    preview_df = pd.read_csv(io.BytesIO(data))
+                    st.caption(f"Showing all rows of **{selected_deletion_file}**")
+                    st.dataframe(preview_df, width="stretch")
+                    
+                    # Show summary
+                    st.info(f"📊 Total records to delete: **{len(preview_df)}**")
+                    
+                except Exception as e:
+                    st.error(f"Error reading file: {e}")
+        
+        st.divider()
+        
+        # Trigger deletion workflow button (always visible)
+        st.subheader("🚀 Process Deletions")
+        
+        col_trigger, col_status = st.columns([1, 1])
+        
+        with col_trigger:
+            trigger_delete_clicked = st.button("▶️ Trigger Delete Workflow", use_container_width=True)
+        
+        with col_status:
+            check_delete_status_clicked = st.button("📊 Check Latest Deletion", use_container_width=True)
+        
+        if trigger_delete_clicked:
                 if not GITHUB_TOKEN or not REPO_OWNER:
                     st.error("❌ Missing GitHub credentials in .env")
                 else:
@@ -625,9 +644,175 @@ elif page == "🗑️ Delete Records":
                             status.update(label="❌ Connection Error", state="error", expanded=True)
                             st.error(f"**Failed to connect to GitHub API**")
                             st.exception(e)
+        
+        if check_delete_status_clicked:
+                if not GITHUB_TOKEN or not REPO_OWNER:
+                    st.error("❌ Missing GitHub credentials in .env")
+                else:
+                    with st.status("📊 Fetching Latest Deletion Run...", expanded=True) as status:
+                        try:
+                            runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/delete_records.yaml/runs"
+                            headers = {
+                                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                                "Accept": "application/vnd.github.v3+json"
+                            }
+                            
+                            response = requests.get(runs_url, headers=headers, params={"per_page": 1})
+                            
+                            if response.status_code == 200:
+                                data = response.json()
+                                
+                                if data.get("total_count", 0) == 0:
+                                    status.update(label="ℹ️ No Deletion Runs Found", state="complete", expanded=True)
+                                    st.info("No workflow runs found. Trigger the deletion workflow to see results here.")
+                                else:
+                                    run = data["workflow_runs"][0]
+                                    run_status = run["status"]
+                                    run_conclusion = run.get("conclusion")
+                                    run_id = run["id"]
+                                    created_at = run["created_at"]
+                                    updated_at = run["updated_at"]
+                                    
+                                    if run_status == "completed":
+                                        if run_conclusion == "success":
+                                            status.update(label="✅ Latest Deletion: Success", state="complete", expanded=True)
+                                            st.success(f"**Deletion workflow completed successfully!**")
+                                            
+                                            st.caption(f"🕐 Started: {created_at}")
+                                            st.caption(f"✓ Completed: {updated_at}")
+                                            st.info("📊 View detailed deletion metrics in the Deletion Execution History section below")
+                                            
+                                        elif run_conclusion == "failure":
+                                            status.update(label="❌ Latest Deletion: Failed", state="error", expanded=True)
+                                            st.error("**Deletion workflow failed!** Check the logs for details.")
+                                        else:
+                                            status.update(label=f"⚠️ Latest Deletion: {run_conclusion}", state="complete", expanded=True)
+                                            st.warning(f"Deletion workflow ended with status: {run_conclusion}")
+                                    elif run_status == "in_progress":
+                                        status.update(label="🔄 Deletion Running...", state="running", expanded=True)
+                                        st.info("**Deletion workflow is currently running**")
+                                        st.caption(f"🕐 Started: {created_at}")
+                                    else:
+                                        status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
+                                        st.info(f"Current status: {run_status}")
+                                    
+                                    st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                                    
+                            else:
+                                status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
+                                st.error(f"**HTTP {response.status_code}**")
+                                st.code(response.text, language="json")
+                                
+                        except Exception as e:
+                            status.update(label="❌ Connection Error", state="error", expanded=True)
+                            st.error(f"**Failed to connect to GitHub API**")
+                            st.exception(e)
             
     except Exception as e:
         st.error(f"Failed to check deletion requests: {e}")
+    
+    st.divider()
+    
+    # DELETION LOGS SECTION
+    st.subheader("📈 Deletion Execution History")
+    st.caption("Logs from previous deletion runs")
+    
+    try:
+        # Get all logs and filter for deletion logs only
+        all_log_blobs = list(logs_client.list_blobs())
+        deletion_log_blobs = [blob for blob in all_log_blobs if blob.name.startswith('deletion_')]
+        
+        if not deletion_log_blobs:
+            st.info("📭 No deletion logs found. Run the delete workflow to generate logs.")
+        else:
+            st.success(f"Found {len(deletion_log_blobs)} deletion log(s)")
+            
+            # Load all deletion logs into a single dataframe
+            all_deletion_logs = []
+            for blob in sorted(deletion_log_blobs, key=lambda x: x.name, reverse=True):  # Most recent first
+                try:
+                    blob_client = logs_client.get_blob_client(blob.name)
+                    log_data = blob_client.download_blob().readall()
+                    log_df = pd.read_csv(io.BytesIO(log_data))
+                    all_deletion_logs.append(log_df)
+                except Exception as e:
+                    st.warning(f"Could not read {blob.name}: {e}")
+            
+            if all_deletion_logs:
+                # Combine all logs
+                combined_deletion_logs: pd.DataFrame = pd.concat(all_deletion_logs, ignore_index=True)
+                
+                # Sort by timestamp (most recent first)
+                combined_deletion_logs = combined_deletion_logs.sort_values('execution_timestamp', ascending=False)
+                
+                # Display summary metrics from most recent run
+                if len(combined_deletion_logs) > 0:
+                    latest: pd.Series = combined_deletion_logs.iloc[0]
+                    
+                    st.write("**Latest Deletion Run:**")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Files Processed", int(latest['files_processed']))
+                    with col2:
+                        st.metric("Rows Deleted", int(latest['rows_deleted']))
+                    with col3:
+                        st.metric("Partitions Updated", int(latest['partitions_updated']))
+                    
+                    st.caption(f"Executed at: {latest['execution_timestamp']}")
+                    
+                    # Display processing details if available
+                    if 'processing_details' in latest and latest['processing_details']:
+                        st.divider()
+                        st.subheader("📋 Processing Details")
+                        details = latest['processing_details'].split(' | ')
+                        for detail in details:
+                            st.markdown(f"{detail}")
+                
+                # Show full history table
+                with st.expander("📊 View Full Deletion History"):
+                    # Format the dataframe for display
+                    display_df: pd.DataFrame = combined_deletion_logs.copy()
+                    display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Show main metrics table (without processing_details column)
+                    metrics_columns = ['execution_timestamp', 'files_processed', 'rows_deleted', 'partitions_updated']
+                    display_metrics = display_df[metrics_columns] if all(col in display_df.columns for col in metrics_columns) else display_df
+                    
+                    st.dataframe(
+                        display_metrics,
+                        width="stretch",
+                        hide_index=True,
+                        column_config={
+                            "execution_timestamp": "Timestamp",
+                            "files_processed": "Files",
+                            "rows_deleted": "Deleted",
+                            "partitions_updated": "Partitions"
+                        }
+                    )
+                    
+                    # Show processing details for each run
+                    if 'processing_details' in display_df.columns:
+                        st.divider()
+                        st.write("**📋 Processing Details by Run:**")
+                        for idx, row in display_df.iterrows():
+                            if row['processing_details']:
+                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
+                                    details = row['processing_details'].split(' | ')
+                                    for detail in details:
+                                        st.markdown(f"{detail}")
+                    
+                    # Download option
+                    csv_export = combined_deletion_logs.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Full Deletion History",
+                        data=csv_export,
+                        file_name="deletion_execution_history.csv",
+                        mime="text/csv"
+                    )
+    
+    except Exception as e:
+        st.error(f"Failed to load deletion logs: {e}")
 
 # ==========================================
 # PAGE 4: FIX QUARANTINE
