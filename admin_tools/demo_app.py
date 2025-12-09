@@ -966,7 +966,7 @@ elif page == "🛠️ Fix Quarantine":
         if staged_names:
             st.info("Files staged for upload below.")
         else:
-            st.success("🎉 Quarantine is empty!")
+            st.success("🎉 Quarantine is empty! Move to Process & Monitor.")
     else:
         sel = st.selectbox("Select file:", remaining_blobs)
         if sel:
@@ -1094,20 +1094,18 @@ elif page == "📊 Final Report":
                 st.session_state.preview_df = pd.read_csv(io.BytesIO(data), nrows=1000)
 
         with col2:
-            if st.button("📥 Prepare Download"):
-                data = client.download_blob().readall()
-                if isinstance(data, str): data = data.encode('utf-8')
-                st.session_state.full_download = data
+            data = client.download_blob().readall()
+            if isinstance(data, str): data = data.encode('utf-8')
+            
+            st.download_button(
+                label="📥 Download Full CSV",
+                data=data,
+                file_name="final_cdc_export.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
         
         if "preview_df" in st.session_state:
             st.divider()
             st.subheader("Data Preview")
             st.dataframe(st.session_state.preview_df, width="stretch")
-        
-        if "full_download" in st.session_state:
-            st.download_button(
-                label="💾 Download Full CSV",
-                data=st.session_state.full_download,
-                file_name="final_cdc_export.csv",
-                mime="text/csv"
-            )

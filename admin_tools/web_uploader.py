@@ -851,7 +851,7 @@ elif page == "🛠️ Fix Quarantine":
         if staged_names:
             st.info("⚠️ Files are staged for upload below!")
         else:
-            st.success("🎉 Quarantine is empty!")
+            st.success("🎉 Quarantine is empty! Move to Process & Monitor.")
     else:
         selected_file = st.selectbox(
             "Select a file to fix:", 
@@ -1003,23 +1003,20 @@ elif page == "📊 Final Report":
 
         # DOWNLOAD ACTION
         with col2:
-            if st.button("📥 Prepare Full Download"):
-                with st.spinner("Downloading full file from Cloud..."):
-                    full_data = blob_client.download_blob().readall()
-                    st.session_state.full_download = full_data
-                    st.success("Ready!")
+            with st.spinner("Downloading full file from Cloud..."):
+                full_data = blob_client.download_blob().readall()
+            
+            st.download_button(
+                label="📥 Download Full CSV",
+                data=full_data,
+                file_name="final_cdc_export.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
 
-        # RESULTS
+        # PREVIEW RESULTS
         if "preview_df" in st.session_state:
             st.divider()
             st.subheader("Data Preview")
             st.dataframe(st.session_state.preview_df, width="stretch")
             st.caption(f"Showing first {len(st.session_state.preview_df)} rows.")
-
-        if "full_download" in st.session_state:
-            st.download_button(
-                label="💾 Save CSV to Disk",
-                data=st.session_state.full_download,
-                file_name="final_cdc_export.csv",
-                mime="text/csv",
-            )
