@@ -57,6 +57,7 @@ def run_mock_pipeline():
     
     # Initialize execution log
     execution_start = datetime.now()
+    processing_log = []  # Track detailed processing events with emojis
     metrics = {
         'execution_timestamp': execution_start.isoformat(),
         'files_processed': 0,
@@ -66,14 +67,16 @@ def run_mock_pipeline():
     }
     
     log = []
-    blobs = landing_client.list_blobs()
+    blobs = list(landing_client.list_blobs())
     if not blobs:
         # Save log even for empty runs
-        _save_mock_execution_log(metrics)
+        processing_log.append("📭 No new files in landing zone")
+        _save_mock_execution_log(metrics, processing_log)
         return "📭 No new files in Landing Zone."
     
     metrics['files_processed'] = len(blobs)
-    log.append(f"Found {len(blobs)} new files to process.")
+    log.append(f"📦 Found {len(blobs)} new files to process.")
+    processing_log.append(f"📦 Found {len(blobs)} file(s) to process")
 
     report_blob = data_client.get_blob_client("final_cdc_export.csv")
     if report_blob.exists():
@@ -85,7 +88,7 @@ def run_mock_pipeline():
         existing_ids = set()
     
     rows_before = len(history_df)
-    log.append(f"History contains {rows_before} rows.")
+    log.append(f"📊 History contains {rows_before} rows.")
 
     all_valid_rows = []
     all_error_rows = []
@@ -117,9 +120,11 @@ def run_mock_pipeline():
             # Delete processed file
             b_client.delete_blob()
             log.append(f"✅ Processed & Deleted: {blob_prop.name} ({valid_count} valid, {error_count} errors)")
+            processing_log.append(f"✅ Processed {blob_prop.name}: {valid_count} valid, {error_count} errors")
             
         except Exception as e:
             log.append(f"❌ CRITICAL ERROR reading {blob_prop.name}: {e}")
+            processing_log.append(f"❌ Error reading {blob_prop.name}: {str(e)}")
 
     # Handle bad data - upload to quarantine
     if all_error_rows:
@@ -132,6 +137,7 @@ def run_mock_pipeline():
         csv_buffer = error_df.to_csv(index=False).encode('utf-8')
         quarantine_client.upload_blob(filename, csv_buffer, overwrite=True)
         log.append(f"⚠️ Quarantined {len(all_error_rows)} rows to {filename}")
+        processing_log.append(f"⚠️ Quarantined {len(all_error_rows)} row(s) to {filename}")
 
     # Handle good data - upsert into report
     if all_valid_rows:
@@ -159,22 +165,28 @@ def run_mock_pipeline():
         
         rows_after = len(full_df)
         log.append(f"📊 Rows Before: {rows_before} -> Rows After: {rows_after}")
+        processing_log.append(f"📊 Processing {len(all_valid_rows)} record(s): ➕ {inserts} inserts, 🔄 {updates} updates")
+        processing_log.append(f"✅ Data upserted: {rows_before} → {rows_after} total rows")
         log.append(f"✅ Report successfully updated!")
     elif not all_error_rows:
         log.append("⚠️ No valid data to process.")
+        processing_log.append("⚠️ No valid data to process")
     
-    # Save execution log
-    _save_mock_execution_log(metrics)
+    # Save execution log with processing details
+    _save_mock_execution_log(metrics, processing_log)
     
     # Return log string with metrics appended
     return "\n".join(log) + f"\n\nMETRICS|{metrics['files_processed']}|{metrics['rows_quarantined']}|{metrics['rows_inserted']}|{metrics['rows_updated']}"
 
-def _save_mock_execution_log(metrics):
+def _save_mock_execution_log(metrics, processing_log):
     """Save execution log to logs container."""
     from datetime import datetime
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         log_filename = f"execution_{timestamp}.csv"
+        
+        # Add processing details to metrics
+        metrics['processing_details'] = ' | '.join(processing_log)
         
         # Convert to DataFrame and CSV
         log_df = pd.DataFrame([metrics])
@@ -191,22 +203,35 @@ def _save_mock_execution_log(metrics):
 
 def run_mock_deletions(pending_deletions):
     """Process deletion requests and remove records from mock data."""
+    from datetime import datetime
+    
     total_deleted = 0
     partitions_updated = 0
-    log = []
+    processing_log = []  # Use processing_log for CSV storage
+    
+    # Initialize deletion log metrics
+    execution_start = datetime.now()
+    metrics = {
+        'execution_timestamp': execution_start.isoformat(),
+        'files_processed': len(pending_deletions),
+        'rows_deleted': 0,
+        'partitions_updated': 0
+    }
     
     # Get the final report blob
     report_blob = data_client.get_blob_client("final_cdc_export.csv")
     
     if not report_blob.exists():
-        return 0, 0, ["No data found to delete from"]
+        processing_log.append("⚠️ No data found to delete from")
+        _save_mock_deletion_log(metrics, processing_log)
+        return 0, 0
     
     # Load existing data
     history_bytes = report_blob.download_blob().readall()
     current_df = pd.read_csv(io.BytesIO(history_bytes), dtype=str)
     original_count = len(current_df)
     
-    log.append(f"📊 Current data contains {original_count} records")
+    processing_log.append(f"📊 Current data contains {original_count} records")
     
     # Collect all IDs to delete
     all_ids_to_delete = set()
@@ -215,9 +240,9 @@ def run_mock_deletions(pending_deletions):
         deletion_df = item['dataframe'].copy()
         ids_from_file = set(deletion_df['sample_id'].tolist())
         all_ids_to_delete.update(ids_from_file)
-        log.append(f"  {item['filename']}: {len(ids_from_file)} IDs marked for deletion")
+        processing_log.append(f"✅ Processed {item['filename']}: {len(ids_from_file)} deletion request(s)")
     
-    log.append(f"🔍 Total unique IDs to delete: {len(all_ids_to_delete)}")
+    processing_log.append(f"🔍 Total unique deletion requests: {len(all_ids_to_delete)}")
     
     # Find which IDs actually exist in the data
     existing_ids = set(current_df['sample_id'].tolist())
@@ -228,21 +253,48 @@ def run_mock_deletions(pending_deletions):
     
     rows_deleted = original_count - len(filtered_df)
     total_deleted = rows_deleted
+    metrics['rows_deleted'] = rows_deleted
     
     if rows_deleted > 0:
         # Save updated data back
         csv_out = filtered_df.to_csv(index=False).encode('utf-8')
         report_blob.upload_blob(csv_out, overwrite=True)
         partitions_updated = 1  # Mock: treating the whole CSV as one "partition"
+        metrics['partitions_updated'] = partitions_updated
         
         # Log which IDs were deleted
         ids_str = ', '.join(sorted(ids_to_actually_delete))
-        log.append(f"🗑️ Deleted {rows_deleted} record(s) | 🆔 IDs: {ids_str}")
-        log.append(f"📊 Remaining records: {len(filtered_df)}")
+        processing_log.append(f"🗑️ Deleted {rows_deleted} record(s) | 🆔 IDs: {ids_str}")
+        processing_log.append(f"📊 Remaining records: {len(filtered_df)}")
     else:
-        log.append("ℹ️ No matching records found to delete")
+        processing_log.append("ℹ️ No matching records found to delete")
     
-    return total_deleted, partitions_updated, log
+    # Save deletion log to CSV
+    _save_mock_deletion_log(metrics, processing_log)
+    
+    return total_deleted, partitions_updated
+
+def _save_mock_deletion_log(metrics, processing_log):
+    """Save deletion log to logs container as CSV."""
+    from datetime import datetime
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_filename = f"deletion_{timestamp}.csv"
+        
+        # Add processing details to metrics
+        metrics['processing_details'] = ' | '.join(processing_log)
+        
+        # Convert to DataFrame and CSV
+        log_df = pd.DataFrame([metrics])
+        log_csv = log_df.to_csv(index=False).encode('utf-8')
+        
+        # Upload to logs container
+        logs_client.upload_blob(log_filename, log_csv, overwrite=True)
+        print(f"✅ Deletion log saved: {log_filename}")  # Debug output
+    except Exception as e:
+        print(f"⚠️ Failed to save deletion log: {e}")
+        import traceback
+        traceback.print_exc()
 
 # ==========================================
 # SIDEBAR: NAVIGATION & CONTROLS
@@ -534,7 +586,9 @@ elif page == "⚙️ Process & Monitor":
     st.caption("Metrics from previous pipeline runs")
     
     try:
-        log_blobs = list(logs_client.list_blobs())
+        # Get all logs and filter for execution logs only
+        all_log_blobs = list(logs_client.list_blobs())
+        log_blobs = [blob for blob in all_log_blobs if blob.name.startswith('execution_')]
         
         if not log_blobs:
             st.info("📭 No execution logs found. Run the pipeline to generate logs.")
@@ -577,6 +631,14 @@ elif page == "⚙️ Process & Monitor":
                         st.metric("Rows Updated", int(latest['rows_updated']))
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
+                    
+                    # Display processing details if available
+                    if 'processing_details' in latest and latest['processing_details']:
+                        st.divider()
+                        st.subheader("📋 Processing Details")
+                        details = latest['processing_details'].split(' | ')
+                        for detail in details:
+                            st.markdown(f"{detail}")
                 
                 # Show full history table
                 with st.expander("📊 View Full Execution History"):
@@ -584,8 +646,12 @@ elif page == "⚙️ Process & Monitor":
                     display_df = combined_logs.copy()
                     display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
                     
+                    # Show main metrics table (without processing_details column)
+                    metrics_columns = ['execution_timestamp', 'files_processed', 'rows_quarantined', 'rows_inserted', 'rows_updated']
+                    display_metrics = display_df[metrics_columns] if all(col in display_df.columns for col in metrics_columns) else display_df
+                    
                     st.dataframe(
-                        display_df,
+                        display_metrics,
                         width="stretch",
                         hide_index=True,
                         column_config={
@@ -596,6 +662,17 @@ elif page == "⚙️ Process & Monitor":
                             "rows_updated": "Updated"
                         }
                     )
+                    
+                    # Show processing details for each run
+                    if 'processing_details' in display_df.columns:
+                        st.divider()
+                        st.write("**📋 Processing Details by Run:**")
+                        for idx, row in display_df.iterrows():
+                            if row['processing_details']:
+                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
+                                    details = row['processing_details'].split(' | ')
+                                    for detail in details:
+                                        st.markdown(f"{detail}")
                     
                     # Download option
                     csv_export = combined_logs.to_csv(index=False).encode('utf-8')
@@ -727,33 +804,11 @@ elif page == "🗑️ Delete Records":
         if st.button("▶️ Trigger Delete Records Workflow", type="primary", use_container_width=True):
             with st.status("🚀 Processing Delete Workflow...", expanded=True) as status:
                 import time
-                st.write(f"📋 Found {len(st.session_state.pending_deletions)} pending deletion request(s)")
-                time.sleep(0.5)
-                
-                # Show what we're about to process
-                for item in st.session_state.pending_deletions:
-                    deletion_df = item['dataframe'].copy()
-                    
-                    # Parse test_date and calculate partitions for display
-                    deletion_df['test_date'] = pd.to_datetime(deletion_df['test_date'])
-                    deletion_df['partition'] = deletion_df['test_date'].apply(
-                        lambda x: f"year={x.year}/week={x.isocalendar()[1]}"
-                    )
-                    
-                    unique_partitions = deletion_df['partition'].unique()
-                    st.write(f"📤 {item['filename']}: {len(deletion_df)} records across {len(unique_partitions)} partition(s)")
-                    time.sleep(0.3)
-                
-                st.write("\n🔄 Executing deletions from data storage...")
+                st.write("🔍 Scanning pending deletion requests...")
                 time.sleep(0.5)
                 
                 # Actually perform the deletions
-                total_deleted, partitions_updated, log_messages = run_mock_deletions(st.session_state.pending_deletions)
-                
-                # Show log messages
-                for msg in log_messages:
-                    st.write(msg)
-                    time.sleep(0.2)
+                total_deleted, partitions_updated = run_mock_deletions(st.session_state.pending_deletions)
                 
                 # Clear pending deletions
                 st.session_state.pending_deletions = []
@@ -761,11 +816,114 @@ elif page == "🗑️ Delete Records":
                 if total_deleted > 0:
                     status.update(label="✅ Deletions Complete!", state="complete")
                     st.success(f"🗑️ Successfully deleted {total_deleted} record(s)!")
-                    st.info("💡 **Demo Mode:** Records have been removed from the mock final report. In production, this would process parquet files across all partitions.")
+                    st.info("📊 View detailed deletion metrics in the Deletion Execution History section below")
                 else:
                     status.update(label="✅ Workflow Complete", state="complete")
                     st.info("ℹ️ No matching records found to delete.")
-                    st.caption("💡 **Demo Mode:** In production, this would trigger the delete_records.yaml GitHub Action.")
+    
+    st.divider()
+    
+    # DELETION EXECUTION HISTORY SECTION
+    st.subheader("📈 Deletion Execution History")
+    st.caption("Logs from previous deletion runs")
+    
+    try:
+        # Get all logs and filter for deletion logs only
+        all_log_blobs = list(logs_client.list_blobs())
+        deletion_log_blobs = [blob for blob in all_log_blobs if blob.name.startswith('deletion_')]
+        
+        if not deletion_log_blobs:
+            st.info("📭 No deletion logs found. Run the delete workflow to generate logs.")
+        else:
+            st.success(f"Found {len(deletion_log_blobs)} deletion log(s)")
+            
+            # Load all deletion logs into a single dataframe
+            all_deletion_logs = []
+            for blob in sorted(deletion_log_blobs, key=lambda x: x.name, reverse=True):  # Most recent first
+                try:
+                    blob_client = logs_client.get_blob_client(blob.name)
+                    log_data = blob_client.download_blob().readall()
+                    if isinstance(log_data, str): log_data = log_data.encode('utf-8')
+                    log_df = pd.read_csv(io.BytesIO(log_data))
+                    all_deletion_logs.append(log_df)
+                except Exception as e:
+                    st.warning(f"Could not read {blob.name}: {e}")
+            
+            if all_deletion_logs:
+                # Combine all logs
+                combined_deletion_logs = pd.concat(all_deletion_logs, ignore_index=True)
+                
+                # Sort by timestamp (most recent first)
+                combined_deletion_logs = combined_deletion_logs.sort_values('execution_timestamp', ascending=False)
+                
+                # Display summary metrics from most recent run
+                if len(combined_deletion_logs) > 0:
+                    latest = combined_deletion_logs.iloc[0]
+                    
+                    st.write("**Latest Deletion Run:**")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Files Processed", int(latest['files_processed']))
+                    with col2:
+                        st.metric("Rows Deleted", int(latest['rows_deleted']))
+                    with col3:
+                        st.metric("Partitions Updated", int(latest['partitions_updated']))
+                    
+                    st.caption(f"Executed at: {latest['execution_timestamp']}")
+                    
+                    # Display processing details if available
+                    if 'processing_details' in latest and latest['processing_details']:
+                        st.divider()
+                        st.subheader("📋 Processing Details")
+                        details = latest['processing_details'].split(' | ')
+                        for detail in details:
+                            st.markdown(f"{detail}")
+                
+                # Show full history table
+                with st.expander("📊 View Full Deletion History"):
+                    # Format the dataframe for display
+                    display_df = combined_deletion_logs.copy()
+                    display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Show main metrics table (without processing_details column)
+                    metrics_columns = ['execution_timestamp', 'files_processed', 'rows_deleted', 'partitions_updated']
+                    display_metrics = display_df[metrics_columns] if all(col in display_df.columns for col in metrics_columns) else display_df
+                    
+                    st.dataframe(
+                        display_metrics,
+                        width="stretch",
+                        hide_index=True,
+                        column_config={
+                            "execution_timestamp": "Timestamp",
+                            "files_processed": "Files",
+                            "rows_deleted": "Deleted",
+                            "partitions_updated": "Partitions"
+                        }
+                    )
+                    
+                    # Show processing details for each run
+                    if 'processing_details' in display_df.columns:
+                        st.divider()
+                        st.write("**📋 Processing Details by Run:**")
+                        for idx, row in display_df.iterrows():
+                            if row['processing_details']:
+                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
+                                    details = row['processing_details'].split(' | ')
+                                    for detail in details:
+                                        st.markdown(f"{detail}")
+                    
+                    # Download option
+                    csv_export = combined_deletion_logs.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Full Deletion History",
+                        data=csv_export,
+                        file_name="deletion_execution_history.csv",
+                        mime="text/csv"
+                    )
+    
+    except Exception as e:
+        st.error(f"Failed to load deletion logs: {e}")
 
 # ==========================================
 # PAGE 4: FIX QUARANTINE
