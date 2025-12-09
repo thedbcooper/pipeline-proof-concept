@@ -68,16 +68,17 @@ def process_pipeline():
             print(f"❌ Failed to read CSV {blob.name}: {e}")
             continue
 
-        # VALIDATE LOOP
+        # VALIDATE BATCH - Process all rows in memory for better performance
         valid_count = 0
         error_count = 0
-        for row in df.iter_rows(named=True):
+        rows = df.to_dicts()  # Convert to list of dicts once
+        for row in rows:
             try:
                 valid_sample = LabResult(**row)
                 all_valid_rows.append(valid_sample.model_dump())
                 valid_count += 1
             except ValidationError as e:
-                bad_row = row
+                bad_row = row.copy()
                 bad_row['pipeline_error'] = str(e)
                 bad_row['source_file'] = blob.name
                 all_error_rows.append(bad_row)

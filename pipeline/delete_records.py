@@ -138,16 +138,16 @@ def process_deletions():
         
         rows_before = len(history_df)
         
-        # Filter out records to delete and track which IDs were actually deleted
-        deleted_ids = []
-        for sample_id in ids_to_delete:
-            if sample_id in history_df["sample_id"]:
-                deleted_ids.append(sample_id)
-        
+        # Use vectorized filtering for better performance
         filtered_df = history_df.filter(~pl.col("sample_id").is_in(ids_to_delete))
         
         rows_after = len(filtered_df)
         rows_deleted = rows_before - rows_after
+        
+        if rows_deleted > 0:
+            # Track which IDs were actually deleted (only those that existed)
+            existing_ids = set(history_df["sample_id"].to_list())
+            deleted_ids = sorted(ids_to_delete & existing_ids)
         
         if rows_deleted > 0:
             print(f"  🗑️ Removing {rows_deleted} record(s)...")
