@@ -51,7 +51,7 @@ with st.sidebar:
     
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Review & Upload", "📦 Landing Zone", "🛠️ Fix Quarantine", "📊 Final Report", "📈 Execution Logs"],
+        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "📦 Landing Zone", "📊 Final Report", "📈 Execution Logs"],
         key="nav_selection"
     )
     
@@ -194,12 +194,12 @@ if page == "🏠 Start Here":
     
     with col1:
         st.markdown("### 1. Upload")
-        st.markdown("Drag & drop raw CSVs to the **Landing Zone**.")
-        st.info("📍 *Tab: 'Review & Upload'*")
+        st.markdown("Drag & drop CSV files containing new lab results.")
+        st.info("📍 *Tab: 'Upload New Data'*")
 
     with col2:
         st.markdown("### 2. Processing")
-        st.markdown("The robot wakes up, validates schema, and merges data.")
+        st.markdown("The automated pipeline validates schema, removes tombstones, and merges data.")
         st.warning("""
         **How to run it:**
         * **Batch Scheduling:** Auto-runs weekly (Cron Job).
@@ -217,101 +217,64 @@ if page == "🏠 Start Here":
     st.subheader("🔴 Workflow B: Error Resolution")
     st.caption("What happens when the robot rejects a file.")
 
-    
-
-    q_col1, q_col2, q_col3 = st.columns(3)
+    q_col1, q_col2, q_col3, q_col4 = st.columns(4)
 
     with q_col1:
         st.markdown("### 1. Alert")
         st.markdown("Files with errors (e.g. 'Positive' instead of 'POS') are **Quarantined**.")
-        st.error("📍 *Tab: 'Fix Quarantine'*")
+        st.error("🚨 *Automatic*")
 
     with q_col2:
-        st.markdown("### 2. Human Review")
-        st.markdown("An admin corrects the specific cell using the Excel-like editor.")
-        st.caption("✍️ *Manual Fix*")
+        st.markdown("### 2. Review")
+        st.markdown("Admin reviews the quarantined file and identifies errors.")
+        st.warning("📍 *Tab: 'Fix Quarantine'*")
 
     with q_col3:
-        st.markdown("### 3. Re-Integration")
-        st.markdown("The fixed file is promoted back to the Upload queue for the next run.")
-        st.info("📍 *Click 'Stage for Upload'*")
+        st.markdown("### 3. Fix & Stage")
+        st.markdown("Admin corrects errors using the Excel-like editor and stages the file for upload.")
+        st.info("✍️ *Click 'Stage for Upload'*")
+    
+    with q_col4:
+        st.markdown("### 4. Re-Upload")
+        st.markdown("Admin reviews all staged fixes and uploads them back to the pipeline.")
+        st.success("📍 *Click 'Upload All Fixed Files'*")
 
     st.divider()
     
     # CALL TO ACTION
     st.success("### 🚀 Ready to begin?")
-    st.markdown("Head over to the **📤 Review & Upload** tab to start processing new batches.")
+    st.markdown("**For new data:** Go to **📤 Upload New Data**")
+    st.markdown("**For error fixes:** Go to **🛠️ Fix Quarantine** (Start here for Demo)")
 
 # ==========================================
-# PAGE 1: UPLOAD (Final Review)
+# PAGE 1: UPLOAD NEW DATA
 # ==========================================
-if page == "📤 Review & Upload":
-    st.title("📤 Final Review & Upload")
+if page == "📤 Upload New Data":
+    st.title("📤 Upload New Data")
+    st.caption("Upload new CSV files to the landing zone for processing")
     
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("1. New Files (From Disk)")
-        uploaded_files = st.file_uploader(
-            "Drag & Drop CSVs", 
-            type="csv", 
-            accept_multiple_files=True,
-            key=f"file_uploader_{st.session_state.upload_counter}"
-        )
-
-    with col2:
-        st.subheader("2. Fixed Files (From Quarantine)")
-        if st.session_state.staged_fixes:
-            for item in st.session_state.staged_fixes:
-                st.text(f"📄 {item['original_name']} ({len(item['dataframe'])} rows)")
-        else:
-            st.info("No fixed files waiting.")
+    uploaded_files = st.file_uploader(
+        "Drag & Drop CSV Files", 
+        type="csv", 
+        accept_multiple_files=True,
+        key=f"file_uploader_{st.session_state.upload_counter}"
+    )
 
     st.divider()
     
-    # UPLOAD BUTTON AT TOP
-    total_new = len(uploaded_files) if uploaded_files else 0
-    total_fixed = len(st.session_state.staged_fixes)
-    
-    if total_new + total_fixed > 0:
-        if st.button(f"🚀 Upload All ({total_new + total_fixed} files) to Cloud", type="primary"):
+    # UPLOAD BUTTON
+    if uploaded_files:
+        if st.button(f"🚀 Upload {len(uploaded_files)} file(s) to Cloud", type="primary"):
             progress_bar = st.progress(0)
-            current_step = 0
-            total_steps = total_new + total_fixed
             
-            # A. Process New Files
-            if uploaded_files:
-                for up_file in uploaded_files:
-                    try:
-                        landing_client.upload_blob(name=up_file.name, data=up_file, overwrite=True)
-                        st.write(f"✅ Uploaded `{up_file.name}`")
-                    except Exception as e:
-                        st.error(f"❌ Failed `{up_file.name}`: {e}")
-                    
-                    current_step += 1
-                    progress_bar.progress(current_step / total_steps)
-
-            # B. Process Fixed Files
-            if st.session_state.staged_fixes:
-                for item in st.session_state.staged_fixes:
-                    fname = item['original_name']
-                    df = item['dataframe']
-                    
-                    try:
-                        csv_buffer = df.to_csv(index=False)
-                        landing_client.upload_blob(name=fname, data=csv_buffer, overwrite=True)
-                        st.write(f"✅ Promoted `{fname}`")
-                        
-                        q_blob = quarantine_client.get_blob_client(fname)
-                        q_blob.delete_blob()
-                        
-                    except Exception as e:
-                        st.error(f"❌ Failed to promote `{fname}`: {e}")
-                    
-                    current_step += 1
-                    progress_bar.progress(current_step / total_steps)
+            for idx, up_file in enumerate(uploaded_files):
+                try:
+                    landing_client.upload_blob(name=up_file.name, data=up_file, overwrite=True)
+                    st.write(f"✅ Uploaded `{up_file.name}`")
+                except Exception as e:
+                    st.error(f"❌ Failed `{up_file.name}`: {e}")
                 
-                st.session_state.staged_fixes = []
+                progress_bar.progress((idx + 1) / len(uploaded_files))
             
             # Increment counter to clear the uploader on rerun
             st.session_state.upload_counter += 1
@@ -327,43 +290,24 @@ if page == "📤 Review & Upload":
     st.divider()
     
     # PREVIEW SECTION
-    preview_options = []
-    
-    # Add new files to preview options
     if uploaded_files:
-        for f in uploaded_files:
-            preview_options.append(("New: " + f.name, f))
-    
-    # Add fixed files to preview options
-    if st.session_state.staged_fixes:
-        for item in st.session_state.staged_fixes:
-            preview_options.append(("Fixed: " + item['original_name'], item['dataframe']))
-    
-    if preview_options:
         st.subheader("📋 File Preview")
         preview_choice = st.selectbox(
             "Select file to preview:", 
-            [opt[0] for opt in preview_options]
+            [f.name for f in uploaded_files]
         )
         
         if preview_choice:
-            # Find the selected file
-            selected_data = next(opt[1] for opt in preview_options if opt[0] == preview_choice)
+            selected_file = next(f for f in uploaded_files if f.name == preview_choice)
             
             try:
-                if isinstance(selected_data, pd.DataFrame):
-                    # It's a fixed file (already a DataFrame)
-                    df_preview = selected_data.head(10)
-                else:
-                    # It's a new file (file object)
-                    df_preview = pd.read_csv(selected_data, nrows=10)
-                
+                df_preview = pd.read_csv(selected_file, nrows=10)
                 st.caption(f"Showing first 10 rows of **{preview_choice}**")
                 st.dataframe(df_preview, width="stretch")
             except Exception as e:
                 st.error(f"Error reading file: {e}")
     else:
-        st.caption("Waiting for files...")
+        st.info("📭 No files selected. Drag and drop CSV files above to get started.")
 
 # ==========================================
 # PAGE 2: LANDING ZONE PREVIEW
@@ -443,7 +387,7 @@ elif page == "🛠️ Fix Quarantine":
     
     if not remaining_blobs:
         if staged_names:
-            st.info("⚠️ Files are staged in the Upload tab! Go there to finish.")
+            st.info("⚠️ Files are staged for upload below!")
         else:
             st.success("🎉 Quarantine is empty!")
     else:
@@ -481,7 +425,7 @@ elif page == "🛠️ Fix Quarantine":
                         "status": "Ready"
                     })
                     
-                    st.toast(f"Moved `{selected_file}` to Upload Tab!")
+                    st.toast(f"Staged `{selected_file}` for upload!")
                     st.rerun()
             
             with col2:
@@ -506,6 +450,65 @@ elif page == "🛠️ Fix Quarantine":
                     if st.button("❌ Cancel", key="confirm_no_quarantine"):
                         st.session_state.confirm_delete_quarantine = None
                         st.rerun()
+    
+    # REVIEW STAGED FIXES SECTION
+    if st.session_state.staged_fixes:
+        st.divider()
+        st.subheader("📦 Review Staged Files")
+        st.caption(f"{len(st.session_state.staged_fixes)} file(s) ready to upload")
+        
+        # List staged files
+        for item in st.session_state.staged_fixes:
+            st.text(f"📄 {item['original_name']} ({len(item['dataframe'])} rows)")
+        
+        # Preview staged files
+        if st.session_state.staged_fixes:
+            st.write("**Preview:**")
+            preview_choice = st.selectbox(
+                "Select staged file to preview:",
+                [item['original_name'] for item in st.session_state.staged_fixes],
+                key="staged_preview"
+            )
+            
+            if preview_choice:
+                selected_item = next(item for item in st.session_state.staged_fixes if item['original_name'] == preview_choice)
+                df_preview = selected_item['dataframe'].head(10)
+                st.caption(f"Showing first 10 rows of **{preview_choice}**")
+                st.dataframe(df_preview, width="stretch")
+        
+        st.divider()
+        
+        # Upload button
+        if st.button(f"🚀 Upload All {len(st.session_state.staged_fixes)} Fixed File(s) to Cloud", type="primary"):
+            progress_bar = st.progress(0)
+            
+            for idx, item in enumerate(st.session_state.staged_fixes):
+                fname = item['original_name']
+                df = item['dataframe']
+                
+                try:
+                    csv_buffer = df.to_csv(index=False)
+                    landing_client.upload_blob(name=fname, data=csv_buffer, overwrite=True)
+                    st.write(f"✅ Promoted `{fname}`")
+                    
+                    # Delete from quarantine
+                    q_blob = quarantine_client.get_blob_client(fname)
+                    q_blob.delete_blob()
+                    
+                except Exception as e:
+                    st.error(f"❌ Failed to promote `{fname}`: {e}")
+                
+                progress_bar.progress((idx + 1) / len(st.session_state.staged_fixes))
+            
+            st.session_state.staged_fixes = []
+            st.session_state.upload_success = True
+            st.rerun()
+        
+        # Show success message after rerun
+        if st.session_state.upload_success:
+            st.success("✨ Done! All fixed files uploaded to Landing Zone.")
+            st.balloons()
+            st.session_state.upload_success = False
 
 # ==========================================
 # PAGE 4: FINAL REPORT
