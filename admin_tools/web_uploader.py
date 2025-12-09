@@ -51,7 +51,7 @@ with st.sidebar:
     
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "📦 Landing Zone", "📊 Final Report", "📈 Execution Logs"],
+        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "⚙️ Process & Monitor", "📊 Final Report"],
         key="nav_selection"
     )
 
@@ -191,14 +191,14 @@ if page == "📤 Upload New Data":
         st.info("📭 No files selected. Drag and drop CSV files above to get started.")
 
 # ==========================================
-# PAGE 2: LANDING ZONE PREVIEW
+# PAGE 2: PROCESS & MONITOR
 # ==========================================
-elif page == "📦 Landing Zone":
-    st.title("📦 Landing Zone Preview")
-    st.caption("Files waiting to be processed by the pipeline")
+elif page == "⚙️ Process & Monitor":
+    st.title("⚙️ Process & Monitor")
+    st.caption("View queued files, trigger pipeline processing, and review execution history")
     
     # Robot Controls Section
-    st.subheader("🤖 Robot Controls")
+    st.subheader("🤖 Pipeline Controls")
     
     col_trigger, col_status = st.columns([1, 1])
     
@@ -308,11 +308,15 @@ elif page == "📦 Landing Zone":
     
     st.divider()
     
+    # LANDING ZONE FILE PREVIEW
+    st.subheader("📦 Files in Landing Zone")
+    st.caption("Files queued for processing")
+    
     try:
         blob_list = list(landing_client.list_blobs())
         
         if not blob_list:
-            st.info("📭 Landing Zone is empty. Upload files in the 'Review & Upload' tab.")
+            st.info("📭 Landing Zone is empty. Upload files in the 'Upload New Data' tab.")
         else:
             st.success(f"Found {len(blob_list)} file(s) in the landing zone")
             
@@ -365,7 +369,91 @@ elif page == "📦 Landing Zone":
                         st.error(f"Error reading file: {e}")
     
     except Exception as e:
-        st.error(f"Failed to access Landing Zone: {e}")
+        st.error(f"Failed to load landing zone files: {e}")
+    
+    st.divider()
+    
+    # EXECUTION LOGS SECTION
+    st.subheader("📈 Pipeline Execution History")
+    st.caption("Metrics from previous pipeline runs")
+    
+    try:
+        log_blobs = list(logs_client.list_blobs())
+        
+        if not log_blobs:
+            st.info("📭 No execution logs found. Run the pipeline to generate logs.")
+        else:
+            st.success(f"Found {len(log_blobs)} execution log(s)")
+            
+            # Load all logs into a single dataframe
+            all_logs = []
+            for blob in sorted(log_blobs, key=lambda x: x.name, reverse=True):  # Most recent first
+                try:
+                    blob_client = logs_client.get_blob_client(blob.name)
+                    log_data = blob_client.download_blob().readall()
+                    log_df = pd.read_csv(io.BytesIO(log_data))
+                    all_logs.append(log_df)
+                except Exception as e:
+                    st.warning(f"Could not read {blob.name}: {e}")
+            
+            if all_logs:
+                # Combine all logs
+                combined_logs = pd.concat(all_logs, ignore_index=True)
+                
+                # Sort by timestamp (most recent first)
+                combined_logs = combined_logs.sort_values('execution_timestamp', ascending=False)
+                
+                # Display summary metrics from most recent run
+                if len(combined_logs) > 0:
+                    latest = combined_logs.iloc[0]
+                    
+                    st.write("**Latest Pipeline Run:**")
+                    col1, col2, col3, col4, col5 = st.columns(5)
+                    
+                    with col1:
+                        st.metric("Files Processed", int(latest['files_processed']))
+                    with col2:
+                        st.metric("Rows Quarantined", int(latest['rows_quarantined']))
+                    with col3:
+                        st.metric("Rows Inserted", int(latest['rows_inserted']))
+                    with col4:
+                        st.metric("Rows Updated", int(latest['rows_updated']))
+                    with col5:
+                        st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
+                    
+                    st.caption(f"Executed at: {latest['execution_timestamp']}")
+                
+                # Show full history table
+                with st.expander("📊 View Full Execution History"):
+                    # Format the dataframe for display
+                    display_df = combined_logs.copy()
+                    display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    st.dataframe(
+                        display_df,
+                        width="stretch",
+                        hide_index=True,
+                        column_config={
+                            "execution_timestamp": "Timestamp",
+                            "files_processed": "Files",
+                            "rows_quarantined": "Quarantined",
+                            "rows_inserted": "Inserted",
+                            "rows_updated": "Updated",
+                            "rows_deleted": "Deleted"
+                        }
+                    )
+                    
+                    # Download option
+                    csv_export = combined_logs.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Full Log History",
+                        data=csv_export,
+                        file_name="pipeline_execution_history.csv",
+                        mime="text/csv"
+                    )
+    
+    except Exception as e:
+        st.error(f"Failed to load execution logs: {e}")
 
 # ==========================================
 # PAGE 3: FIX QUARANTINE
@@ -554,95 +642,3 @@ elif page == "📊 Final Report":
                 file_name="final_cdc_export.csv",
                 mime="text/csv",
             )
-
-# ==========================================
-# PAGE 5: EXECUTION LOGS
-# ==========================================
-elif page == "📈 Execution Logs":
-    st.title("📈 Pipeline Execution History")
-    
-    st.info("""
-        This page shows the execution history of the data processing pipeline.
-        Each log entry captures metrics from a single pipeline run.
-    """)
-    
-    # List all log files
-    try:
-        log_blobs = list(logs_client.list_blobs())
-        
-        if not log_blobs:
-            st.warning("📭 No execution logs found. Run the pipeline to generate logs.")
-        else:
-            st.success(f"Found {len(log_blobs)} execution log(s)")
-            
-            # Load all logs into a single dataframe
-            all_logs = []
-            for blob in sorted(log_blobs, key=lambda x: x.name, reverse=True):  # Most recent first
-                try:
-                    blob_client = logs_client.get_blob_client(blob.name)
-                    log_data = blob_client.download_blob().readall()
-                    log_df = pd.read_csv(io.BytesIO(log_data))
-                    all_logs.append(log_df)
-                except Exception as e:
-                    st.warning(f"Could not read {blob.name}: {e}")
-            
-            if all_logs:
-                # Combine all logs
-                combined_logs = pd.concat(all_logs, ignore_index=True)
-                
-                # Sort by timestamp (most recent first)
-                combined_logs = combined_logs.sort_values('execution_timestamp', ascending=False)
-                
-                # Display summary metrics from most recent run
-                if len(combined_logs) > 0:
-                    latest = combined_logs.iloc[0]
-                    
-                    st.subheader("Latest Pipeline Run")
-                    col1, col2, col3, col4, col5 = st.columns(5)
-                    
-                    with col1:
-                        st.metric("Files Processed", int(latest['files_processed']))
-                    with col2:
-                        st.metric("Rows Quarantined", int(latest['rows_quarantined']))
-                    with col3:
-                        st.metric("Rows Inserted", int(latest['rows_inserted']))
-                    with col4:
-                        st.metric("Rows Updated", int(latest['rows_updated']))
-                    with col5:
-                        st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
-                    
-                    st.caption(f"Executed at: {latest['execution_timestamp']}")
-                
-                # Show full history table
-                st.divider()
-                st.subheader("Execution History")
-                
-                # Format the dataframe for display
-                display_df = combined_logs.copy()
-                display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
-                
-                st.dataframe(
-                    display_df,
-                    width="stretch",
-                    hide_index=True,
-                    column_config={
-                        "execution_timestamp": "Timestamp",
-                        "files_processed": "Files",
-                        "rows_quarantined": "Quarantined",
-                        "rows_inserted": "Inserted",
-                        "rows_updated": "Updated",
-                        "rows_deleted": "Deleted"
-                    }
-                )
-                
-                # Download option
-                csv_export = combined_logs.to_csv(index=False).encode('utf-8')
-                st.download_button(
-                    label="📥 Download Full Log History",
-                    data=csv_export,
-                    file_name="pipeline_execution_history.csv",
-                    mime="text/csv"
-                )
-    
-    except Exception as e:
-        st.error(f"Failed to load execution logs: {e}")
