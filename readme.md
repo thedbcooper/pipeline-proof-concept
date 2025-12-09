@@ -20,28 +20,34 @@ An automated, serverless data pipeline designed to ingest, validate, and aggrega
 2.  **The Robot (Pipeline):** A GitHub Action triggers the processing script.
       * **Validation:** Uses `Pydantic` to enforce strict schema (e.g., `viral_load` must be int).
       * **Routing:** Good data $\rightarrow$ Data Lake (Parquet). Bad data $\rightarrow$ Quarantine (CSV).
+      * **Logging:** Detailed processing logs with metrics saved to CSV for audit trail.
 3.  **Quarantine Loop:** Admins review rejected files in the Streamlit UI, fix errors (e.g., "Positive" $\rightarrow$ "POS"), and promote them back to the Landing Zone.
-4.  **Reporting:** Clean data is aggregated into a master CDC Export file.
+4.  **Deletion Workflow:** Upload CSV with sample_id and test_date to permanently remove records from partitioned data.
+5.  **Reporting:** Clean data is aggregated into a master CDC Export file with full execution history.
 
 -----
 
 ## 📂 Repository Structure
 
-Based on your file directory:
-
 ```text
 .
 ├── .github/workflows/
-│   └── weekly_pipeline.yaml      # The Cron Job (Production Automation)
+│   ├── weekly_pipeline.yaml      # Scheduled pipeline automation (production)
+│   └── delete_records.yaml       # Manual deletion workflow trigger
 ├── admin_tools/
 │   ├── demo_app.py               # 🎮 THE DEMO APP (Public Portfolio Frontend)
-│   ├── generate_and_upload_mock_data.py
-│   ├── mock_azure.py             # Cloud Emulation Logic
-│   └── web_uploader.py           # 🔒 THE REAL APP (Local Production Admin Console)
+│   ├── web_uploader.py           # 🔒 THE REAL APP (Local Production Admin Console)
+│   ├── mock_azure.py             # Cloud Emulation Logic for Demo
+│   ├── fetch_errors.py           # Utility: Download quarantine files
+│   ├── reingest_fixed_data.py    # Utility: Re-upload fixed data
+│   ├── generate_and_upload_mock_data.py  # Utility: Generate test data
+│   └── test_connection.py        # Utility: Test Azure connection
 ├── pipeline/
-│   ├── process_data_cloud.py     # The Core ETL Logic (Polars + Pydantic)
-│   └── export_report.py          # Generates the final CDC aggregate report
+│   ├── process_data_cloud.py     # Core ETL Logic (Polars + Pydantic)
+│   ├── export_report.py          # Generate final CDC aggregate report
+│   └── delete_records.py         # Process deletion requests from CSV
 ├── models.py                     # Pydantic Schema Definitions
+├── pyproject.toml                # Project dependencies (uv)
 └── README.md
 ```
 
@@ -56,8 +62,18 @@ Most pipelines crash on bad data. This one **side-steps** it.
   * **Polars + Pydantic:** Used for fast validation and data integrity.
   * **Quarantine:** Invalid files move to `quarantine/` and wait for human review.
   * **Human-in-the-Loop:** The Admin Console provides an Excel-like editor to fix the typo and retry.
+  * **Detailed Logging:** Every pipeline run saves comprehensive logs with emoji-rich processing details for easy debugging.
 
-### 2\. Cloud Abstraction (Security Highlight)
+### 2\. Data Deletion Workflow
+
+A dedicated workflow for data corrections:
+
+  * **Two-Step Process:** Upload deletion requests (CSV with sample_id and test_date), then trigger workflow.
+  * **Partition-Aware:** Automatically calculates which partitions to check based on test dates.
+  * **Audit Trail:** Logs which sample IDs were deleted from which partitions with full timestamp tracking.
+  * **GitHub Actions Integration:** Secure, authenticated deletion via automated workflow.
+
+### 3\. Cloud Abstraction (Security Highlight)
 
 To share this project publicly without exposing Azure credentials, I implemented a **Mock Object Pattern**:
 
@@ -95,13 +111,15 @@ To run the full production pipeline, you must establish a secure connection betw
 
 ### 1\. Azure Storage Setup 🟦
 
-Create a Storage Account and three private containers, which serve as the structure for your Data Lake:
+Create a Storage Account and the following private containers, which serve as the structure for your Data Lake:
 
 | Container Name | Purpose |
 | :--- | :--- |
 | **landing-zone** | Receives raw uploaded CSVs from the Admin Console. |
 | **quarantine** | Holds CSV files that failed Pydantic validation (for human review). |
-| **data** | Stores the finalized, cleaned data (Parquet/Master Report CSV). |
+| **data** | Stores the finalized, cleaned data in partitioned parquet files. |
+| **logs** | Stores execution and deletion logs as CSV files for audit trail. |
+| **deletion-requests** | Holds pending deletion request CSVs before processing. |
 
 ### 2\. Generating Secrets (Service Principal) 🔑
 
@@ -132,7 +150,9 @@ Navigate to your repository settings on GitHub (`Settings` $\rightarrow$ `Secret
 | `AZURE_CLIENT_SECRET` | The `password` value from the CLI. | Pipeline Robot, Local App |
 | `AZURE_TENANT_ID` | The `tenant` value from the CLI. | Pipeline Robot, Local App |
 | `AZURE_STORAGE_ACCOUNT` | Your storage account name (e.g., `labdata01`). | Pipeline Robot, Local App |
-| `GITHUB_TOKEN` | A Fine-Grained PAT with **actions:write** scope. | Sidebar Trigger Button |
+| `GITHUB_TOKEN` | A Fine-Grained PAT with **actions:write** scope. | Workflow Trigger Buttons |
+| `REPO_OWNER` | Your GitHub username (e.g., `thedbcooper`). | Workflow Trigger Buttons |
+| `REPO_NAME` | Your repository name (e.g., `pipeline-proof-concept`). | Workflow Trigger Buttons |
 
 -----
 
