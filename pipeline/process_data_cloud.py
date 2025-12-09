@@ -51,7 +51,7 @@ def process_pipeline():
     all_error_rows = []
 
     for blob in blobs:
-        print(f"Downloading {blob.name}...")
+        print(f"📥 Downloading {blob.name}...")
         
         blob_client = landing_client.get_blob_client(blob.name)
         downloaded_bytes = blob_client.download_blob().readall()
@@ -60,21 +60,26 @@ def process_pipeline():
         try:
             df = pl.read_csv(io.BytesIO(downloaded_bytes), infer_schema_length=0)
         except Exception as e:
-            print(f"Failed to read CSV {blob.name}: {e}")
+            print(f"❌ Failed to read CSV {blob.name}: {e}")
             continue
 
         # VALIDATE LOOP
+        valid_count = 0
+        error_count = 0
         for row in df.iter_rows(named=True):
             try:
                 valid_sample = LabResult(**row)
                 all_valid_rows.append(valid_sample.model_dump())
+                valid_count += 1
             except ValidationError as e:
                 bad_row = row
                 bad_row['pipeline_error'] = str(e)
                 bad_row['source_file'] = blob.name
                 all_error_rows.append(bad_row)
+                error_count += 1
         
-        print(f"Deleting {blob.name} from landing-zone...")
+        print(f"✅ Processed {blob.name}: {valid_count} valid, {error_count} errors")
+        print(f"🗑️ Deleting {blob.name} from landing-zone...")
         blob_client.delete_blob()
 
     # --- 2. HANDLE BAD DATA ---
@@ -103,12 +108,14 @@ def process_pipeline():
     )
 
     unique_partitions = full_df["partition_path"].unique().to_list()
+    print(f"\n📊 Processing {len(all_valid_rows)} valid records across {len(unique_partitions)} partition(s)...")
 
     for part_path in unique_partitions:
-        print(f"Processing partition: {part_path}")
+        print(f"\n📁 Processing partition: {part_path}")
         
         new_batch_df = full_df.filter(pl.col("partition_path") == part_path)
         new_batch_df = new_batch_df.drop("partition_path")
+        print(f"   📦 New batch contains {len(new_batch_df)} record(s)")
         
         # Change extension to .parquet
         blob_name = f"{part_path}/data.parquet"
@@ -136,7 +143,8 @@ def process_pipeline():
             log_entry['rows_inserted'] += new_inserts
             log_entry['rows_updated'] += updates
             
-            print(f"   Uploading Parquet ({len(final_df)} rows)...")
+            print(f"   ➕ New records: {new_inserts}, 🔄 Updated: {updates}")
+            print(f"   💾 Uploading Parquet ({len(final_df)} total rows)...")
             
             # Fix 2: Write to buffer, then upload bytes
             output_stream = io.BytesIO()
@@ -154,7 +162,14 @@ def process_pipeline():
             new_batch_df.write_parquet(output_stream)
             blob_client.upload_blob(output_stream.getvalue(), overwrite=True)
 
-    print("✅ Cloud Pipeline Complete!")
+    print("\n" + "="*60)
+    print("✅ PIPELINE COMPLETE!")
+    print(f"📊 SUMMARY:")
+    print(f"   Files Processed: {log_entry['files_processed']}")
+    print(f"   Rows Quarantined: {log_entry['rows_quarantined']}")
+    print(f"   Rows Inserted: {log_entry['rows_inserted']}")
+    print(f"   Rows Updated: {log_entry['rows_updated']}")
+    print("="*60 + "\n")
     
     # Save execution log
     _save_execution_log(log_entry)
