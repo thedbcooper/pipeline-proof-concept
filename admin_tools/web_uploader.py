@@ -595,6 +595,29 @@ elif page == "🗑️ Delete Records":
                     # Show summary
                     st.info(f"📊 Total records to delete: **{len(preview_df)}**")
                     
+                    # Delete button with confirmation
+                    st.divider()
+                    if st.button("🗑️ Delete This Request", type="secondary", key="delete_deletion_request"):
+                        st.session_state.confirm_delete_deletion = selected_deletion_file
+                    
+                    # Confirmation dialog
+                    if st.session_state.get("confirm_delete_deletion") == selected_deletion_file:
+                        st.warning(f"⚠️ Are you sure you want to delete `{selected_deletion_file}`? This action cannot be undone.")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_deletion"):
+                                try:
+                                    blob_client.delete_blob()
+                                    st.session_state.confirm_delete_deletion = None
+                                    st.toast(f"Deleted `{selected_deletion_file}` from deletion requests")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to delete: {e}")
+                        with col2:
+                            if st.button("❌ Cancel", key="confirm_no_deletion"):
+                                st.session_state.confirm_delete_deletion = None
+                                st.rerun()
+                    
                 except Exception as e:
                     st.error(f"Error reading file: {e}")
         

@@ -796,6 +796,33 @@ elif page == "🗑️ Delete Records":
                 
                 # Show summary
                 st.info(f"📊 Total records to delete: **{len(preview_df)}**")
+                
+                # Delete button with confirmation
+                st.divider()
+                if st.button("🗑️ Delete This Request", type="secondary", key="delete_deletion_request"):
+                    st.session_state.confirm_delete_deletion = selected_deletion_file
+                
+                # Confirmation dialog
+                if st.session_state.get("confirm_delete_deletion") == selected_deletion_file:
+                    st.warning(f"⚠️ Are you sure you want to delete `{selected_deletion_file}`? This action cannot be undone.")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_deletion"):
+                            try:
+                                # Remove from session state
+                                st.session_state.pending_deletions = [
+                                    item for item in st.session_state.pending_deletions 
+                                    if item['filename'] != selected_deletion_file
+                                ]
+                                st.session_state.confirm_delete_deletion = None
+                                st.toast(f"Deleted `{selected_deletion_file}` from pending requests")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Failed to delete: {e}")
+                    with col2:
+                        if st.button("❌ Cancel", key="confirm_no_deletion"):
+                            st.session_state.confirm_delete_deletion = None
+                            st.rerun()
         
         st.divider()
         
@@ -851,14 +878,14 @@ elif page == "🗑️ Delete Records":
             
             if all_deletion_logs:
                 # Combine all logs
-                combined_deletion_logs = pd.concat(all_deletion_logs, ignore_index=True)
+                combined_deletion_logs: pd.DataFrame = pd.concat(all_deletion_logs, ignore_index=True)
                 
                 # Sort by timestamp (most recent first)
                 combined_deletion_logs = combined_deletion_logs.sort_values('execution_timestamp', ascending=False)
                 
                 # Display summary metrics from most recent run
                 if len(combined_deletion_logs) > 0:
-                    latest = combined_deletion_logs.iloc[0]
+                    latest: pd.Series = combined_deletion_logs.iloc[0]
                     
                     st.write("**Latest Deletion Run:**")
                     col1, col2, col3 = st.columns(3)
@@ -883,7 +910,7 @@ elif page == "🗑️ Delete Records":
                 # Show full history table
                 with st.expander("📊 View Full Deletion History"):
                     # Format the dataframe for display
-                    display_df = combined_deletion_logs.copy()
+                    display_df: pd.DataFrame = combined_deletion_logs.copy()
                     display_df['execution_timestamp'] = pd.to_datetime(display_df['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
                     
                     # Show main metrics table (without processing_details column)
