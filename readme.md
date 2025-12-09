@@ -182,9 +182,12 @@ REPO_NAME=<your_repository_name>
 ```
 
 **Note:** The `GITHUB_TOKEN` must be a Personal Access Token (PAT) with `workflow` scope to trigger Actions and read run status.
-| `GITHUB_TOKEN` | A Fine-Grained PAT with **actions:write** scope. | Workflow Trigger Buttons |
-| `REPO_OWNER` | Your GitHub username (e.g., `thedbcooper`). | Workflow Trigger Buttons |
-| `REPO_NAME` | Your repository name (e.g., `pipeline-proof-concept`). | Workflow Trigger Buttons |
+
+| Secret Name     | Source / Value                                         | Used By                |
+| :-------------- | :----------------------------------------------------- | :--------------------- |
+| `GITHUB_TOKEN`  | A Fine-Grained PAT with **actions:write** scope.       | Workflow Trigger Buttons |
+| `REPO_OWNER`    | Your GitHub username (e.g., `thedbcooper`).            | Workflow Trigger Buttons |
+| `REPO_NAME`     | Your repository name (e.g., `pipeline-proof-concept`). | Workflow Trigger Buttons |
 
 -----
 
