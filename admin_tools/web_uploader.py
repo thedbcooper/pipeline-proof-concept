@@ -79,12 +79,12 @@ if page == "🏠 Start Here":
         st.info("📍 *Tab: 'Upload New Data'*")
 
     with col2:
-        st.markdown("### 2. Processing")
-        st.markdown("The automated pipeline validates schema, removes tombstones, and merges data.")
+        st.markdown("### 2. Review & Trigger")
+        st.markdown("Review queued files in the landing zone, then trigger the pipeline to validate and process data.")
         st.warning("""
         **How to run it:**
         * **Batch Scheduling:** Auto-runs weekly (Cron Job).
-        * **Ad-Hoc:** Click **▶️ Trigger Weekly Pipeline** in the sidebar.
+        * **Ad-Hoc:** Go to **⚙️ Process & Monitor** tab and click **▶️ Trigger Weekly Pipeline**.
         """)
 
     with col3:
@@ -116,9 +116,9 @@ if page == "🏠 Start Here":
         st.info("✍️ *Click 'Stage for Upload'*")
     
     with q_col4:
-        st.markdown("### 4. Re-Upload")
-        st.markdown("Admin reviews all staged fixes and uploads them back to the pipeline.")
-        st.success("📍 *Click 'Upload All Fixed Files'*")
+        st.markdown("### 4. Re-Upload & Process")
+        st.markdown("Upload fixed files back to landing zone, then go to **⚙️ Process & Monitor** to trigger ingestion.")
+        st.success("📍 *Click 'Upload All Fixed Files', then trigger pipeline*")
 
     st.divider()
     
