@@ -159,10 +159,29 @@ Navigate to your repository settings on GitHub (`Settings` $\rightarrow$ `Secret
 
 | Secret Name | Source / Value | Used By |
 | :--- | :--- | :--- |
-| `AZURE_CLIENT_ID` | The `appId` value from the CLI. | Pipeline Robot, Local App |
-| `AZURE_CLIENT_SECRET` | The `password` value from the CLI. | Pipeline Robot, Local App |
-| `AZURE_TENANT_ID` | The `tenant` value from the CLI. | Pipeline Robot, Local App |
-| `AZURE_STORAGE_ACCOUNT` | Your storage account name (e.g., `labdata01`). | Pipeline Robot, Local App |
+| `AZURE_CLIENT_ID` | The `appId` value from the CLI. | GitHub Actions workflows |
+| `AZURE_CLIENT_SECRET` | The `password` value from the CLI. | GitHub Actions workflows |
+| `AZURE_TENANT_ID` | The `tenant` value from the CLI. | GitHub Actions workflows |
+| `AZURE_STORAGE_ACCOUNT` | Your storage account name (e.g., `labdata01`). | GitHub Actions workflows |
+
+### 4\. Configuring Local Environment (.env) 🔧
+
+For the Streamlit apps to authenticate with Azure and trigger/monitor GitHub Actions, create a `.env` file in the project root with these variables:
+
+```env
+# Azure Authentication (same values as GitHub secrets)
+AZURE_CLIENT_ID=<your_appId>
+AZURE_CLIENT_SECRET=<your_password>
+AZURE_TENANT_ID=<your_tenant>
+AZURE_STORAGE_ACCOUNT=<your_storage_account_name>
+
+# GitHub API Access (for triggering workflows from Streamlit)
+GITHUB_TOKEN=<your_personal_access_token>
+REPO_OWNER=<your_github_username>
+REPO_NAME=<your_repository_name>
+```
+
+**Note:** The `GITHUB_TOKEN` must be a Personal Access Token (PAT) with `workflow` scope to trigger Actions and read run status.
 | `GITHUB_TOKEN` | A Fine-Grained PAT with **actions:write** scope. | Workflow Trigger Buttons |
 | `REPO_OWNER` | Your GitHub username (e.g., `thedbcooper`). | Workflow Trigger Buttons |
 | `REPO_NAME` | Your repository name (e.g., `pipeline-proof-concept`). | Workflow Trigger Buttons |
