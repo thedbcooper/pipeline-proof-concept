@@ -538,8 +538,74 @@ elif page == "🗑️ Delete Records":
             st.info("📭 No pending deletion requests")
         else:
             st.warning(f"⚠️ Found {len(deletion_blobs)} pending deletion request(s)")
+            
+            # List files
             for blob in deletion_blobs:
                 st.text(f"📄 {blob.name}")
+            
+            st.divider()
+            
+            # Preview pending deletion files
+            if deletion_blobs:
+                st.subheader("📋 Preview Deletion Requests")
+                selected_deletion_file = st.selectbox(
+                    "Select file to preview:",
+                    [blob.name for blob in deletion_blobs],
+                    key="deletion_preview_selector"
+                )
+                
+                if selected_deletion_file:
+                    blob_client = deletion_client.get_blob_client(selected_deletion_file)
+                    try:
+                        data = blob_client.download_blob().readall()
+                        preview_df = pd.read_csv(io.BytesIO(data))
+                        st.caption(f"Showing all rows of **{selected_deletion_file}**")
+                        st.dataframe(preview_df, width="stretch")
+                        
+                        # Show summary
+                        st.info(f"📊 Total records to delete: **{len(preview_df)}**")
+                        
+                    except Exception as e:
+                        st.error(f"Error reading file: {e}")
+            
+            st.divider()
+            
+            # Trigger deletion workflow button
+            st.subheader("🚀 Process Deletions")
+            if st.button("▶️ Trigger Delete Records Workflow", type="primary", use_container_width=True):
+                if not GITHUB_TOKEN or not REPO_OWNER:
+                    st.error("❌ Missing GitHub credentials in .env")
+                else:
+                    with st.status("🚀 Triggering Delete Records Workflow...", expanded=True) as status:
+                        url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/delete_records.yaml/dispatches"
+                        headers = {
+                            "Authorization": f"Bearer {GITHUB_TOKEN}",
+                            "Accept": "application/vnd.github.v3+json"
+                        }
+                        data = {"ref": "main"}
+
+                        try:
+                            response = requests.post(url, json=data, headers=headers)
+                            if response.status_code == 204:
+                                status.update(label="✅ Delete Workflow Triggered!", state="complete", expanded=True)
+                                st.success("🎯 **Delete records workflow has been queued**")
+                                st.info("📊 The workflow will:\n"
+                                        "- Process all pending deletion requests\n"
+                                        "- Find matching records across partitions\n"
+                                        "- Remove records from parquet files\n"
+                                        "- Save deletion logs")
+                                st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
+                                st.caption("⏱️ Check the Actions tab to see processing status and logs.")
+                            else:
+                                status.update(label="❌ Failed to Trigger", state="error", expanded=True)
+                                st.error(f"**HTTP {response.status_code}**")
+                                with st.expander("📄 Response Details"):
+                                    st.code(response.text, language="json")
+                        except Exception as e:
+                            status.update(label="❌ Connection Error", state="error", expanded=True)
+                            st.error(f"**Failed to connect to GitHub API**")
+                            st.exception(e)
+            
     except Exception as e:
         st.error(f"Failed to check deletion requests: {e}")
 

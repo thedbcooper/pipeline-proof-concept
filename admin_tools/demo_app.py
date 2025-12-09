@@ -190,6 +190,54 @@ def _save_mock_execution_log(metrics):
         import traceback
         traceback.print_exc()
 
+def run_mock_deletions(pending_deletions):
+    """Process deletion requests and remove records from mock data."""
+    total_deleted = 0
+    partitions_updated = 0
+    log = []
+    
+    # Get the final report blob
+    report_blob = data_client.get_blob_client("final_cdc_export.csv")
+    
+    if not report_blob.exists():
+        return 0, 0, ["No data found to delete from"]
+    
+    # Load existing data
+    history_bytes = report_blob.download_blob().readall()
+    current_df = pd.read_csv(io.BytesIO(history_bytes), dtype=str)
+    original_count = len(current_df)
+    
+    log.append(f"📊 Current data contains {original_count} records")
+    
+    # Collect all IDs to delete
+    all_ids_to_delete = set()
+    
+    for item in pending_deletions:
+        deletion_df = item['dataframe'].copy()
+        ids_from_file = set(deletion_df['sample_id'].tolist())
+        all_ids_to_delete.update(ids_from_file)
+        log.append(f"  {item['filename']}: {len(ids_from_file)} IDs marked for deletion")
+    
+    log.append(f"🔍 Total unique IDs to delete: {len(all_ids_to_delete)}")
+    
+    # Filter out records to delete
+    filtered_df = current_df[~current_df['sample_id'].isin(all_ids_to_delete)]
+    
+    rows_deleted = original_count - len(filtered_df)
+    total_deleted = rows_deleted
+    
+    if rows_deleted > 0:
+        # Save updated data back
+        csv_out = filtered_df.to_csv(index=False).encode('utf-8')
+        report_blob.upload_blob(csv_out, overwrite=True)
+        partitions_updated = 1  # Mock: treating the whole CSV as one "partition"
+        log.append(f"✅ Removed {rows_deleted} record(s)")
+        log.append(f"📊 Remaining records: {len(filtered_df)}")
+    else:
+        log.append("ℹ️ No matching records found to delete")
+    
+    return total_deleted, partitions_updated, log
+
 # ==========================================
 # SIDEBAR: NAVIGATION & CONTROLS
 # ==========================================
@@ -602,55 +650,121 @@ elif page == "🗑️ Delete Records":
                 
                 st.divider()
                 
-                # Confirm deletion
-                if st.button("⚠️ Process Deletions", type="primary"):
-                    with st.status("Processing deletions...", expanded=True) as status:
-                        try:
-                            # Upload to deletion-requests container (mock)
-                            from datetime import datetime
-                            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                            filename = f"deletion_request_{timestamp}.csv"
-                            
-                            # In demo mode, we'll simulate the deletion process
-                            st.write(f"📤 Uploading deletion request: {filename}")
-                            
-                            # Simulate processing
-                            import time
-                            time.sleep(1)
-                            
-                            # Parse test_date and calculate partitions
-                            deletion_df['test_date'] = pd.to_datetime(deletion_df['test_date'])
-                            deletion_df['partition'] = deletion_df['test_date'].apply(
-                                lambda x: f"year={x.year}/week={x.isocalendar()[1]}"
-                            )
-                            
-                            unique_partitions = deletion_df['partition'].unique()
-                            st.write(f"🔍 Checking {len(unique_partitions)} partition(s)...")
-                            
-                            total_deleted = 0
-                            
-                            # Simulate deletion from each partition
-                            for partition in unique_partitions:
-                                partition_deletions = deletion_df[deletion_df['partition'] == partition]
-                                st.write(f"  Processing {partition}: {len(partition_deletions)} deletion(s)")
-                                total_deleted += len(partition_deletions)
-                                time.sleep(0.3)
-                            
-                            status.update(label="✅ Deletions Complete!", state="complete")
-                            st.success(f"🗑️ Successfully deleted {total_deleted} record(s)!")
-                            
-                            # Clear the uploader
-                            st.info("💡 **Note:** In production, this would trigger the delete_records.py script via GitHub Actions")
-                            
-                        except Exception as e:
-                            status.update(label="❌ Deletion Failed", state="error")
-                            st.error(f"Failed to process deletions: {e}")
-                            st.exception(e)
+                # Upload button (just stages the file, doesn't process)
+                if st.button("📤 Upload Deletion Request", type="primary"):
+                    try:
+                        from datetime import datetime
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        filename = f"deletion_request_{timestamp}.csv"
+                        
+                        # Store in session state to simulate pending deletion requests
+                        if 'pending_deletions' not in st.session_state:
+                            st.session_state.pending_deletions = []
+                        
+                        st.session_state.pending_deletions.append({
+                            'filename': filename,
+                            'dataframe': deletion_df.copy()
+                        })
+                        
+                        st.success(f"✅ Uploaded deletion request: `{filename}`")
+                        st.info("""
+                        **Next Steps:**
+                        1. Review pending deletion requests below
+                        2. Click **▶️ Trigger Delete Records Workflow** to process deletions
+                        """)
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Failed to upload deletion request: {e}")
         
         except Exception as e:
             st.error(f"Error reading CSV file: {e}")
     else:
         st.info("📭 No file uploaded. Upload a CSV to begin.")
+    
+    st.divider()
+    
+    # Show existing deletion requests (using session state)
+    st.subheader("📦 Pending Deletion Requests")
+    
+    if 'pending_deletions' not in st.session_state:
+        st.session_state.pending_deletions = []
+    
+    if not st.session_state.pending_deletions:
+        st.info("📭 No pending deletion requests")
+    else:
+        st.warning(f"⚠️ Found {len(st.session_state.pending_deletions)} pending deletion request(s)")
+        
+        # List files
+        for item in st.session_state.pending_deletions:
+            st.text(f"📄 {item['filename']}")
+        
+        st.divider()
+        
+        # Preview pending deletion files
+        if st.session_state.pending_deletions:
+            st.subheader("📋 Preview Deletion Requests")
+            selected_deletion_file = st.selectbox(
+                "Select file to preview:",
+                [item['filename'] for item in st.session_state.pending_deletions],
+                key="deletion_preview_selector"
+            )
+            
+            if selected_deletion_file:
+                selected_item = next(item for item in st.session_state.pending_deletions if item['filename'] == selected_deletion_file)
+                preview_df = selected_item['dataframe']
+                st.caption(f"Showing all rows of **{selected_deletion_file}**")
+                st.dataframe(preview_df, width="stretch")
+                
+                # Show summary
+                st.info(f"📊 Total records to delete: **{len(preview_df)}**")
+        
+        st.divider()
+        
+        # Trigger deletion workflow button
+        st.subheader("🚀 Process Deletions")
+        if st.button("▶️ Trigger Delete Records Workflow", type="primary", use_container_width=True):
+            with st.status("🚀 Processing Delete Workflow...", expanded=True) as status:
+                import time
+                st.write(f"📋 Found {len(st.session_state.pending_deletions)} pending deletion request(s)")
+                time.sleep(0.5)
+                
+                # Show what we're about to process
+                for item in st.session_state.pending_deletions:
+                    deletion_df = item['dataframe'].copy()
+                    
+                    # Parse test_date and calculate partitions for display
+                    deletion_df['test_date'] = pd.to_datetime(deletion_df['test_date'])
+                    deletion_df['partition'] = deletion_df['test_date'].apply(
+                        lambda x: f"year={x.year}/week={x.isocalendar()[1]}"
+                    )
+                    
+                    unique_partitions = deletion_df['partition'].unique()
+                    st.write(f"📤 {item['filename']}: {len(deletion_df)} records across {len(unique_partitions)} partition(s)")
+                    time.sleep(0.3)
+                
+                st.write("\n🔄 Executing deletions from data storage...")
+                time.sleep(0.5)
+                
+                # Actually perform the deletions
+                total_deleted, partitions_updated, log_messages = run_mock_deletions(st.session_state.pending_deletions)
+                
+                # Show log messages
+                for msg in log_messages:
+                    st.write(msg)
+                    time.sleep(0.2)
+                
+                # Clear pending deletions
+                st.session_state.pending_deletions = []
+                
+                if total_deleted > 0:
+                    status.update(label="✅ Deletions Complete!", state="complete")
+                    st.success(f"🗑️ Successfully deleted {total_deleted} record(s)!")
+                    st.info("💡 **Demo Mode:** Records have been removed from the mock final report. In production, this would process parquet files across all partitions.")
+                else:
+                    status.update(label="✅ Workflow Complete", state="complete")
+                    st.info("ℹ️ No matching records found to delete.")
+                    st.caption("💡 **Demo Mode:** In production, this would trigger the delete_records.yaml GitHub Action.")
 
 # ==========================================
 # PAGE 4: FIX QUARANTINE
