@@ -54,125 +54,6 @@ with st.sidebar:
         ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "📦 Landing Zone", "📊 Final Report", "📈 Execution Logs"],
         key="nav_selection"
     )
-    
-    st.divider()
-    st.subheader("🤖 Robot Controls")
-    
-    # Add a refresh button to check latest run status
-    col_trigger, col_status = st.columns([1, 1])
-    
-    with col_trigger:
-        trigger_clicked = st.button("▶️ Trigger Weekly Pipeline", use_container_width=True)
-    
-    with col_status:
-        check_status_clicked = st.button("📊 Check Latest Run", use_container_width=True)
-    
-    if trigger_clicked:
-        if not GITHUB_TOKEN or not REPO_OWNER:
-            st.error("❌ Missing GitHub credentials in .env")
-        else:
-            with st.status("🚀 Triggering Cloud Pipeline...", expanded=True) as status:
-                url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/dispatches"
-                headers = {
-                    "Authorization": f"Bearer {GITHUB_TOKEN}",
-                    "Accept": "application/vnd.github.v3+json"
-                }
-                data = {"ref": "main"} 
-
-                try:
-                    response = requests.post(url, json=data, headers=headers)
-                    if response.status_code == 204:
-                        status.update(label="✅ Pipeline Triggered Successfully!", state="complete", expanded=True)
-                        st.success("🎯 **Pipeline workflow has been queued**")
-                        st.info("📊 The pipeline will:\n"
-                                "- Process files from landing zone\n"
-                                "- Validate data against schema\n"
-                                "- Quarantine invalid rows\n"
-                                "- Remove tombstoned records (sample_status='remove')\n"
-                                "- Upsert valid data into partitioned storage")
-                        st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
-                        st.caption("⏱️ Check the Actions tab to see processing status, logs, and any errors.")
-                    else:
-                        status.update(label="❌ Failed to Trigger", state="error", expanded=True)
-                        st.error(f"**HTTP {response.status_code}**")
-                        with st.expander("📄 Response Details"):
-                            st.code(response.text, language="json")
-                except Exception as e:
-                    status.update(label="❌ Connection Error", state="error", expanded=True)
-                    st.error(f"**Failed to connect to GitHub API**")
-                    st.exception(e)
-    
-    # Check latest workflow run status
-    if check_status_clicked:
-        if not GITHUB_TOKEN or not REPO_OWNER:
-            st.error("❌ Missing GitHub credentials in .env")
-        else:
-            with st.status("📊 Fetching Latest Pipeline Run...", expanded=True) as status:
-                try:
-                    # Get latest workflow runs
-                    runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/runs"
-                    headers = {
-                        "Authorization": f"Bearer {GITHUB_TOKEN}",
-                        "Accept": "application/vnd.github.v3+json"
-                    }
-                    
-                    response = requests.get(runs_url, headers=headers, params={"per_page": 1})
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        
-                        if data.get("total_count", 0) == 0:
-                            status.update(label="ℹ️ No Pipeline Runs Found", state="complete", expanded=True)
-                            st.info("No workflow runs found. Trigger the pipeline to see results here.")
-                        else:
-                            run = data["workflow_runs"][0]
-                            run_status = run["status"]
-                            run_conclusion = run.get("conclusion")
-                            run_id = run["id"]
-                            created_at = run["created_at"]
-                            updated_at = run["updated_at"]
-                            
-                            # Update status based on run state
-                            if run_status == "completed":
-                                if run_conclusion == "success":
-                                    status.update(label="✅ Latest Run: Success", state="complete", expanded=True)
-                                    st.success(f"**Pipeline completed successfully!**")
-                                    
-                                    st.caption(f"🕐 Started: {created_at}")
-                                    st.caption(f"✓ Completed: {updated_at}")
-                                    st.info("📄 View detailed logs and metrics on GitHub Actions")
-                                    
-                                elif run_conclusion == "failure":
-                                    status.update(label="❌ Latest Run: Failed", state="error", expanded=True)
-                                    st.error("**Pipeline failed!** Check the logs for details.")
-                                else:
-                                    status.update(label=f"⚠️ Latest Run: {run_conclusion}", state="complete", expanded=True)
-                                    st.warning(f"Pipeline ended with status: {run_conclusion}")
-                            elif run_status == "in_progress":
-                                status.update(label="🔄 Pipeline Running...", state="running", expanded=True)
-                                st.info("**Pipeline is currently running**")
-                                st.caption(f"🕐 Started: {created_at}")
-                            else:
-                                status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
-                                st.info(f"Current status: {run_status}")
-                            
-                            st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
-                            
-                    else:
-                        status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
-                        st.error(f"**HTTP {response.status_code}**")
-                        st.code(response.text, language="json")
-                        
-                except Exception as e:
-                    status.update(label="❌ Error", state="error", expanded=True)
-                    st.error("**Failed to fetch workflow status**")
-                    st.exception(e)
-                    
-    # LOGOUT BUTTON
-    st.divider()
-    if st.button("Log Out"):
-        st.session_state.password_correct = False
-        st.rerun()
 
 # ==========================================
 # PAGE 0: LANDING PAGE
@@ -315,6 +196,117 @@ if page == "📤 Upload New Data":
 elif page == "📦 Landing Zone":
     st.title("📦 Landing Zone Preview")
     st.caption("Files waiting to be processed by the pipeline")
+    
+    # Robot Controls Section
+    st.subheader("🤖 Robot Controls")
+    
+    col_trigger, col_status = st.columns([1, 1])
+    
+    with col_trigger:
+        trigger_clicked = st.button("▶️ Trigger Weekly Pipeline", use_container_width=True)
+    
+    with col_status:
+        check_status_clicked = st.button("📊 Check Latest Run", use_container_width=True)
+    
+    if trigger_clicked:
+        if not GITHUB_TOKEN or not REPO_OWNER:
+            st.error("❌ Missing GitHub credentials in .env")
+        else:
+            with st.status("🚀 Triggering Cloud Pipeline...", expanded=True) as status:
+                url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/dispatches"
+                headers = {
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                data = {"ref": "main"} 
+
+                try:
+                    response = requests.post(url, json=data, headers=headers)
+                    if response.status_code == 204:
+                        status.update(label="✅ Pipeline Triggered Successfully!", state="complete", expanded=True)
+                        st.success("🎯 **Pipeline workflow has been queued**")
+                        st.info("📊 The pipeline will:\n"
+                                "- Process files from landing zone\n"
+                                "- Validate data against schema\n"
+                                "- Quarantine invalid rows\n"
+                                "- Remove tombstoned records (sample_status='remove')\n"
+                                "- Upsert valid data into partitioned storage")
+                        st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
+                        st.caption("⏱️ Check the Actions tab to see processing status, logs, and any errors.")
+                    else:
+                        status.update(label="❌ Failed to Trigger", state="error", expanded=True)
+                        st.error(f"**HTTP {response.status_code}**")
+                        with st.expander("📄 Response Details"):
+                            st.code(response.text, language="json")
+                except Exception as e:
+                    status.update(label="❌ Connection Error", state="error", expanded=True)
+                    st.error(f"**Failed to connect to GitHub API**")
+                    st.exception(e)
+    
+    if check_status_clicked:
+        if not GITHUB_TOKEN or not REPO_OWNER:
+            st.error("❌ Missing GitHub credentials in .env")
+        else:
+            with st.status("📊 Fetching Latest Pipeline Run...", expanded=True) as status:
+                try:
+                    runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/runs"
+                    headers = {
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json"
+                    }
+                    
+                    response = requests.get(runs_url, headers=headers, params={"per_page": 1})
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        if data.get("total_count", 0) == 0:
+                            status.update(label="ℹ️ No Pipeline Runs Found", state="complete", expanded=True)
+                            st.info("No workflow runs found. Trigger the pipeline to see results here.")
+                        else:
+                            run = data["workflow_runs"][0]
+                            run_status = run["status"]
+                            run_conclusion = run.get("conclusion")
+                            run_id = run["id"]
+                            created_at = run["created_at"]
+                            updated_at = run["updated_at"]
+                            
+                            if run_status == "completed":
+                                if run_conclusion == "success":
+                                    status.update(label="✅ Latest Run: Success", state="complete", expanded=True)
+                                    st.success(f"**Pipeline completed successfully!**")
+                                    
+                                    st.caption(f"🕐 Started: {created_at}")
+                                    st.caption(f"✓ Completed: {updated_at}")
+                                    st.info("📄 View detailed logs and metrics on GitHub Actions")
+                                    
+                                elif run_conclusion == "failure":
+                                    status.update(label="❌ Latest Run: Failed", state="error", expanded=True)
+                                    st.error("**Pipeline failed!** Check the logs for details.")
+                                else:
+                                    status.update(label=f"⚠️ Latest Run: {run_conclusion}", state="complete", expanded=True)
+                                    st.warning(f"Pipeline ended with status: {run_conclusion}")
+                            elif run_status == "in_progress":
+                                status.update(label="🔄 Pipeline Running...", state="running", expanded=True)
+                                st.info("**Pipeline is currently running**")
+                                st.caption(f"🕐 Started: {created_at}")
+                            else:
+                                status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
+                                st.info(f"Current status: {run_status}")
+                            
+                            st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                            
+                    else:
+                        status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
+                        st.error(f"**HTTP {response.status_code}**")
+                        st.code(response.text, language="json")
+                        
+                except Exception as e:
+                    status.update(label="❌ Connection Error", state="error", expanded=True)
+                    st.error(f"**Failed to connect to GitHub API**")
+                    st.exception(e)
+    
+    st.divider()
     
     try:
         blob_list = list(landing_client.list_blobs())
