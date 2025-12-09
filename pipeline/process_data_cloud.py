@@ -32,8 +32,7 @@ def process_pipeline():
         'files_processed': 0,
         'rows_quarantined': 0,
         'rows_inserted': 0,
-        'rows_updated': 0,
-        'rows_deleted': 0
+        'rows_updated': 0
     }
     
     # 1. LIST FILES

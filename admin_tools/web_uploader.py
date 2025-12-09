@@ -406,7 +406,7 @@ elif page == "⚙️ Process & Monitor":
                     latest = combined_logs.iloc[0]
                     
                     st.write("**Latest Pipeline Run:**")
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
                         st.metric("Files Processed", int(latest['files_processed']))
@@ -416,8 +416,6 @@ elif page == "⚙️ Process & Monitor":
                         st.metric("Rows Inserted", int(latest['rows_inserted']))
                     with col4:
                         st.metric("Rows Updated", int(latest['rows_updated']))
-                    with col5:
-                        st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
                 
@@ -436,8 +434,7 @@ elif page == "⚙️ Process & Monitor":
                             "files_processed": "Files",
                             "rows_quarantined": "Quarantined",
                             "rows_inserted": "Inserted",
-                            "rows_updated": "Updated",
-                            "rows_deleted": "Deleted"
+                            "rows_updated": "Updated"
                         }
                     )
                     

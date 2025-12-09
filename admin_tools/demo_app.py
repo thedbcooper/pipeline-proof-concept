@@ -62,8 +62,7 @@ def run_mock_pipeline():
         'files_processed': 0,
         'rows_quarantined': 0,
         'rows_inserted': 0,
-        'rows_updated': 0,
-        'rows_deleted': 0
+        'rows_updated': 0
     }
     
     log = []
@@ -168,7 +167,7 @@ def run_mock_pipeline():
     _save_mock_execution_log(metrics)
     
     # Return log string with metrics appended
-    return "\n".join(log) + f"\n\nMETRICS|{metrics['files_processed']}|{metrics['rows_quarantined']}|{metrics['rows_inserted']}|{metrics['rows_updated']}|{metrics['rows_deleted']}"
+    return "\n".join(log) + f"\n\nMETRICS|{metrics['files_processed']}|{metrics['rows_quarantined']}|{metrics['rows_inserted']}|{metrics['rows_updated']}"
 
 def _save_mock_execution_log(metrics):
     """Save execution log to logs container."""
@@ -431,13 +430,13 @@ elif page == "⚙️ Process & Monitor":
                 # Parse the METRICS from the log (new format)
                 if "METRICS|" in result_log:
                     metrics_line = [l for l in result_log.split('\n') if 'METRICS|' in l][0]
-                    _, files_processed, rows_quarantined, rows_inserted, rows_updated, rows_deleted = metrics_line.split('|')
+                    _, files_processed, rows_quarantined, rows_inserted, rows_updated = metrics_line.split('|')
                     
                     # Display summary
                     st.success("✨ **Pipeline executed successfully!**")
                     st.balloons()
                     
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1, col2, col3, col4 = st.columns(4)
                     with col1:
                         st.metric("Files Processed", files_processed)
                     with col2:
@@ -446,8 +445,6 @@ elif page == "⚙️ Process & Monitor":
                         st.metric("Rows Inserted", rows_inserted)
                     with col4:
                         st.metric("Rows Updated", rows_updated)
-                    with col5:
-                        st.metric("⚠️ Rows Deleted", rows_deleted, delta=None if rows_deleted == '0' else f"-{rows_deleted}", delta_color="inverse")
                 else:
                     # Fallback to old parsing method
                     st.success("✨ **Pipeline executed successfully!**")
@@ -561,7 +558,7 @@ elif page == "⚙️ Process & Monitor":
                     latest = combined_logs.iloc[0]
                     
                     st.write("**Latest Pipeline Run:**")
-                    col1, col2, col3, col4, col5 = st.columns(5)
+                    col1, col2, col3, col4 = st.columns(4)
                     
                     with col1:
                         st.metric("Files Processed", int(latest['files_processed']))
@@ -571,8 +568,6 @@ elif page == "⚙️ Process & Monitor":
                         st.metric("Rows Inserted", int(latest['rows_inserted']))
                     with col4:
                         st.metric("Rows Updated", int(latest['rows_updated']))
-                    with col5:
-                        st.metric("⚠️ Rows Deleted", int(latest['rows_deleted']))
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
                 
@@ -591,8 +586,7 @@ elif page == "⚙️ Process & Monitor":
                             "files_processed": "Files",
                             "rows_quarantined": "Quarantined",
                             "rows_inserted": "Inserted",
-                            "rows_updated": "Updated",
-                            "rows_deleted": "Deleted"
+                            "rows_updated": "Updated"
                         }
                     )
                     
