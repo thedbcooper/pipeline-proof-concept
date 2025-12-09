@@ -196,6 +196,71 @@ elif page == "⚙️ Process & Monitor":
     st.title("⚙️ Process & Monitor")
     st.caption("View queued files, trigger pipeline processing, and review execution history")
     
+    # LANDING ZONE FILE PREVIEW
+    st.subheader("📦 Files in Landing Zone")
+    st.caption("Files queued for processing")
+    
+    try:
+        blob_list = list(landing_client.list_blobs())
+        
+        if not blob_list:
+            st.info("📭 Landing Zone is empty. Upload files in the 'Upload New Data' tab.")
+        else:
+            st.success(f"Found {len(blob_list)} file(s) in the landing zone")
+            
+            # Show file list
+            st.subheader("Files in Queue")
+            for blob in blob_list:
+                st.text(f"📄 {blob.name}")
+            
+            st.divider()
+            
+            # File preview
+            if blob_list:
+                st.subheader("📋 File Preview")
+                selected_blob_name = st.selectbox(
+                    "Select file to preview:",
+                    [blob.name for blob in blob_list]
+                )
+                
+                if selected_blob_name:
+                    blob_client = landing_client.get_blob_client(selected_blob_name)
+                    try:
+                        data = blob_client.download_blob().readall()
+                        df_preview = pd.read_csv(io.BytesIO(data), nrows=10)
+                        st.caption(f"Showing first 10 rows of **{selected_blob_name}**")
+                        st.dataframe(df_preview, width="stretch")
+                        
+                        # Delete button with confirmation
+                        st.divider()
+                        if st.button("🗑️ Delete This File", type="secondary", key="delete_landing"):
+                            st.session_state.confirm_delete_landing = selected_blob_name
+                        
+                        # Confirmation dialog
+                        if st.session_state.get("confirm_delete_landing") == selected_blob_name:
+                            st.warning(f"⚠️ Are you sure you want to delete `{selected_blob_name}`? This action cannot be undone.")
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_landing"):
+                                    try:
+                                        blob_client.delete_blob()
+                                        st.session_state.confirm_delete_landing = None
+                                        st.toast(f"Deleted `{selected_blob_name}` from landing zone")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Failed to delete: {e}")
+                            with col2:
+                                if st.button("❌ Cancel", key="confirm_no_landing"):
+                                    st.session_state.confirm_delete_landing = None
+                                    st.rerun()
+                    except Exception as e:
+                        st.error(f"Error reading file: {e}")
+    
+    except Exception as e:
+        st.error(f"Failed to load landing zone files: {e}")
+    
+    st.divider()
+    
     # Robot Controls Section
     st.subheader("🤖 Pipeline Controls")
     
@@ -303,71 +368,6 @@ elif page == "⚙️ Process & Monitor":
                     status.update(label="❌ Connection Error", state="error", expanded=True)
                     st.error(f"**Failed to connect to GitHub API**")
                     st.exception(e)
-    
-    st.divider()
-    
-    # LANDING ZONE FILE PREVIEW
-    st.subheader("📦 Files in Landing Zone")
-    st.caption("Files queued for processing")
-    
-    try:
-        blob_list = list(landing_client.list_blobs())
-        
-        if not blob_list:
-            st.info("📭 Landing Zone is empty. Upload files in the 'Upload New Data' tab.")
-        else:
-            st.success(f"Found {len(blob_list)} file(s) in the landing zone")
-            
-            # Show file list
-            st.subheader("Files in Queue")
-            for blob in blob_list:
-                st.text(f"📄 {blob.name}")
-            
-            st.divider()
-            
-            # File preview
-            if blob_list:
-                st.subheader("📋 File Preview")
-                selected_blob_name = st.selectbox(
-                    "Select file to preview:",
-                    [blob.name for blob in blob_list]
-                )
-                
-                if selected_blob_name:
-                    blob_client = landing_client.get_blob_client(selected_blob_name)
-                    try:
-                        data = blob_client.download_blob().readall()
-                        df_preview = pd.read_csv(io.BytesIO(data), nrows=10)
-                        st.caption(f"Showing first 10 rows of **{selected_blob_name}**")
-                        st.dataframe(df_preview, width="stretch")
-                        
-                        # Delete button with confirmation
-                        st.divider()
-                        if st.button("🗑️ Delete This File", type="secondary", key="delete_landing"):
-                            st.session_state.confirm_delete_landing = selected_blob_name
-                        
-                        # Confirmation dialog
-                        if st.session_state.get("confirm_delete_landing") == selected_blob_name:
-                            st.warning(f"⚠️ Are you sure you want to delete `{selected_blob_name}`? This action cannot be undone.")
-                            col1, col2 = st.columns(2)
-                            with col1:
-                                if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_landing"):
-                                    try:
-                                        blob_client.delete_blob()
-                                        st.session_state.confirm_delete_landing = None
-                                        st.toast(f"Deleted `{selected_blob_name}` from landing zone")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Failed to delete: {e}")
-                            with col2:
-                                if st.button("❌ Cancel", key="confirm_no_landing"):
-                                    st.session_state.confirm_delete_landing = None
-                                    st.rerun()
-                    except Exception as e:
-                        st.error(f"Error reading file: {e}")
-    
-    except Exception as e:
-        st.error(f"Failed to load landing zone files: {e}")
     
     st.divider()
     

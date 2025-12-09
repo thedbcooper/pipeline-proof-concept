@@ -412,57 +412,6 @@ elif page == "⚙️ Process & Monitor":
     st.title("⚙️ Process & Monitor")
     st.caption("View queued files, trigger pipeline processing, and review execution history")
     
-    # Robot Controls Section
-    st.subheader("🤖 Pipeline Controls")
-    
-    if st.button("▶️ Trigger Weekly Pipeline", use_container_width=True):
-        with st.status("🤖 Processing Pipeline...", expanded=True) as status:
-            st.write("🔍 Scanning landing zone...")
-            time.sleep(0.5)
-            result_log = run_mock_pipeline()
-            time.sleep(0.3)
-            
-            if "CRITICAL ERROR" in result_log or "Failed" in result_log:
-                status.update(label="❌ Pipeline Failed", state="error", expanded=True)
-                st.error("⚠️ **Pipeline encountered errors**")
-                with st.expander("📜 View Error Details", expanded=True):
-                    st.code(result_log, language="text")
-            elif "No new files" in result_log:
-                status.update(label="⏸️ Pipeline Idle", state="complete", expanded=True)
-                st.info("📭 **No files to process**")
-                st.caption(result_log)
-            else:
-                status.update(label="✅ Pipeline Complete!", state="complete", expanded=True)
-                
-                # Parse the METRICS from the log (new format)
-                if "METRICS|" in result_log:
-                    metrics_line = [l for l in result_log.split('\n') if 'METRICS|' in l][0]
-                    _, files_processed, rows_quarantined, rows_inserted, rows_updated = metrics_line.split('|')
-                    
-                    # Display summary
-                    st.success("✨ **Pipeline executed successfully!**")
-                    st.balloons()
-                    
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Files Processed", files_processed)
-                    with col2:
-                        st.metric("Rows Quarantined", rows_quarantined, delta=None if rows_quarantined == '0' else f"-{rows_quarantined}", delta_color="inverse")
-                    with col3:
-                        st.metric("Rows Inserted", rows_inserted)
-                    with col4:
-                        st.metric("Rows Updated", rows_updated)
-                else:
-                    # Fallback to old parsing method
-                    st.success("✨ **Pipeline executed successfully!**")
-                
-                # Clean log for display (remove METRICS line)
-                display_log = '\n'.join([line for line in result_log.split('\n') if not line.startswith('METRICS|')])
-                with st.expander("📜 View Detailed Log"):
-                    st.code(display_log, language="text")
-    
-    st.divider()
-    
     # LANDING ZONE FILE PREVIEW
     st.subheader("📦 Files in Landing Zone")
     st.caption("Files queued for processing")
@@ -526,6 +475,57 @@ elif page == "⚙️ Process & Monitor":
     
     except Exception as e:
         st.error(f"Failed to load landing zone files: {e}")
+    
+    st.divider()
+    
+    # Robot Controls Section
+    st.subheader("🤖 Pipeline Controls")
+    
+    if st.button("▶️ Trigger Weekly Pipeline", use_container_width=True):
+        with st.status("🤖 Processing Pipeline...", expanded=True) as status:
+            st.write("🔍 Scanning landing zone...")
+            time.sleep(0.5)
+            result_log = run_mock_pipeline()
+            time.sleep(0.3)
+            
+            if "CRITICAL ERROR" in result_log or "Failed" in result_log:
+                status.update(label="❌ Pipeline Failed", state="error", expanded=True)
+                st.error("⚠️ **Pipeline encountered errors**")
+                with st.expander("📜 View Error Details", expanded=True):
+                    st.code(result_log, language="text")
+            elif "No new files" in result_log:
+                status.update(label="⏸️ Pipeline Idle", state="complete", expanded=True)
+                st.info("📭 **No files to process**")
+                st.caption(result_log)
+            else:
+                status.update(label="✅ Pipeline Complete!", state="complete", expanded=True)
+                
+                # Parse the METRICS from the log (new format)
+                if "METRICS|" in result_log:
+                    metrics_line = [l for l in result_log.split('\n') if 'METRICS|' in l][0]
+                    _, files_processed, rows_quarantined, rows_inserted, rows_updated = metrics_line.split('|')
+                    
+                    # Display summary
+                    st.success("✨ **Pipeline executed successfully!**")
+                    st.balloons()
+                    
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Files Processed", files_processed)
+                    with col2:
+                        st.metric("Rows Quarantined", rows_quarantined, delta=None if rows_quarantined == '0' else f"-{rows_quarantined}", delta_color="inverse")
+                    with col3:
+                        st.metric("Rows Inserted", rows_inserted)
+                    with col4:
+                        st.metric("Rows Updated", rows_updated)
+                else:
+                    # Fallback to old parsing method
+                    st.success("✨ **Pipeline executed successfully!**")
+                
+                # Clean log for display (remove METRICS line)
+                display_log = '\n'.join([line for line in result_log.split('\n') if not line.startswith('METRICS|')])
+                with st.expander("📜 View Detailed Log"):
+                    st.code(display_log, language="text")
     
     st.divider()
     
