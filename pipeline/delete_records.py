@@ -148,8 +148,7 @@ def process_deletions():
             # Track which IDs were actually deleted (only those that existed)
             existing_ids = set(history_df["sample_id"].to_list())
             deleted_ids = sorted(ids_to_delete & existing_ids)
-        
-        if rows_deleted > 0:
+            
             print(f"  🗑️ Removing {rows_deleted} record(s)...")
             print(f"  🆔 Deleted sample_ids: {', '.join(deleted_ids)}")
             total_deleted += rows_deleted
