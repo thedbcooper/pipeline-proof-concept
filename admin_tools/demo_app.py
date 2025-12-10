@@ -694,13 +694,35 @@ elif page == "⚙️ Process & Monitor":
                 if len(combined_logs) > 0:
                     latest = combined_logs.iloc[0]
                     
-                    # Display processing details directly if available
-                    if 'processing_details' in latest and latest['processing_details']:
-                        st.write("**📋 Latest Run Details:**")
-                        st.caption(f"Executed at: {latest['execution_timestamp']}")
-                        details = latest['processing_details'].split(' | ')
-                        for detail in details:
-                            st.markdown(f"{detail}")
+                    # Display processing details dropdown for all runs
+                    if 'processing_details' in combined_logs.columns:
+                        st.divider()
+                        st.subheader("📋 Processing Details by Run")
+                        
+                        # Create dropdown to select which run to view
+                        runs_with_details = combined_logs[combined_logs['processing_details'].notna() & (combined_logs['processing_details'] != '')].copy()
+                        
+                        if len(runs_with_details) > 0:
+                            # Format timestamps for display
+                            runs_with_details['display_timestamp'] = pd.to_datetime(runs_with_details['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                            run_options = [f"Run at {row['display_timestamp']}" for _, row in runs_with_details.iterrows()]
+                            
+                            selected_run = st.selectbox(
+                                "Select a run to view details:",
+                                options=run_options,
+                                key="demo_pipeline_details_selector"
+                            )
+                            
+                            # Find and display the selected run's details
+                            selected_idx = run_options.index(selected_run)
+                            selected_row = runs_with_details.iloc[selected_idx]
+                            
+                            st.write(f"**🕐 {selected_run}**")
+                            details = selected_row['processing_details'].split(' | ')
+                            for detail in details:
+                                st.markdown(f"{detail}")
+                        else:
+                            st.info("No processing details available for any runs.")
                 
                 # Show full history table
                 with st.expander("📊 View Full Execution History"):
@@ -724,17 +746,6 @@ elif page == "⚙️ Process & Monitor":
                             "rows_updated": "Updated"
                         }
                     )
-                    
-                    # Show processing details for each run
-                    if 'processing_details' in display_df.columns:
-                        st.divider()
-                        st.write("**📋 Processing Details by Run:**")
-                        for idx, row in display_df.iterrows():
-                            if row['processing_details']:
-                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
-                                    details = row['processing_details'].split(' | ')
-                                    for detail in details:
-                                        st.markdown(f"{detail}")
                     
                     # Download option
                     csv_export = combined_logs.to_csv(index=False).encode('utf-8')
@@ -968,13 +979,35 @@ elif page == "🗑️ Delete Records":
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
                     
-                    # Display processing details if available
-                    if 'processing_details' in latest and latest['processing_details']:
+                    # Display processing details dropdown for all runs
+                    if 'processing_details' in combined_deletion_logs.columns:
                         st.divider()
-                        st.subheader("📋 Processing Details")
-                        details = latest['processing_details'].split(' | ')
-                        for detail in details:
-                            st.markdown(f"{detail}")
+                        st.subheader("📋 Processing Details by Run")
+                        
+                        # Create dropdown to select which run to view
+                        runs_with_details = combined_deletion_logs[combined_deletion_logs['processing_details'].notna() & (combined_deletion_logs['processing_details'] != '')].copy()
+                        
+                        if len(runs_with_details) > 0:
+                            # Format timestamps for display
+                            runs_with_details['display_timestamp'] = pd.to_datetime(runs_with_details['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                            run_options = [f"Run at {row['display_timestamp']}" for _, row in runs_with_details.iterrows()]
+                            
+                            selected_run = st.selectbox(
+                                "Select a run to view details:",
+                                options=run_options,
+                                key="demo_deletion_details_selector"
+                            )
+                            
+                            # Find and display the selected run's details
+                            selected_idx = run_options.index(selected_run)
+                            selected_row = runs_with_details.iloc[selected_idx]
+                            
+                            st.write(f"**🕐 {selected_run}**")
+                            details = selected_row['processing_details'].split(' | ')
+                            for detail in details:
+                                st.markdown(f"{detail}")
+                        else:
+                            st.info("No processing details available for any runs.")
                 
                 # Show full history table
                 with st.expander("📊 View Full Deletion History"):
@@ -997,17 +1030,6 @@ elif page == "🗑️ Delete Records":
                             "partitions_updated": "Partitions"
                         }
                     )
-                    
-                    # Show processing details for each run
-                    if 'processing_details' in display_df.columns:
-                        st.divider()
-                        st.write("**📋 Processing Details by Run:**")
-                        for idx, row in display_df.iterrows():
-                            if row['processing_details']:
-                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
-                                    details = row['processing_details'].split(' | ')
-                                    for detail in details:
-                                        st.markdown(f"{detail}")
                     
                     # Download option
                     csv_export = combined_deletion_logs.to_csv(index=False).encode('utf-8')
