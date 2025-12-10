@@ -283,7 +283,7 @@ Navigate to your repository settings on GitHub (`Settings` $\rightarrow$ `Secret
 | `AZURE_CLIENT_ID` | The `appId` value from the CLI. | GitHub Actions workflows |
 | `AZURE_CLIENT_SECRET` | The `password` value from the CLI. | GitHub Actions workflows |
 | `AZURE_TENANT_ID` | The `tenant` value from the CLI. | GitHub Actions workflows |
-| `AZURE_STORAGE_ACCOUNT` | Your storage account name (e.g., `labdata01`). | GitHub Actions workflows |
+| `AZURE_STORAGE_ACCOUNT` | Your storage account name (e.g., `PHData01`). | GitHub Actions workflows |
 
 ### 4\. Configuring Local Environment (.env) 🔧
 
