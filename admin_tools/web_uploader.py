@@ -169,7 +169,7 @@ if page == "📤 Upload New Data":
     
     # Show success message after rerun
     if st.session_state.upload_success:
-        st.success("✨ Done! All files uploaded to Landing Zone. Be sure to trigger the pipeline from the sidebar or wait for automatic runs.")
+        st.success("✨ Done! All files uploaded to Landing Zone. Go to **⚙️ Process & Monitor** to trigger the pipeline.")
         st.session_state.upload_success = False
     
     st.divider()
