@@ -3,6 +3,8 @@ import os
 import io
 import requests
 import pandas as pd
+import time
+from datetime import datetime
 from azure.identity import DefaultAzureCredential
 from azure.storage.blob import BlobServiceClient
 from dotenv import load_dotenv
@@ -25,6 +27,18 @@ if "upload_counter" not in st.session_state:
     st.session_state.upload_counter = 0
 if "upload_success" not in st.session_state:
     st.session_state.upload_success = False
+if "pipeline_monitoring" not in st.session_state:
+    st.session_state.pipeline_monitoring = False
+if "deletion_monitoring" not in st.session_state:
+    st.session_state.deletion_monitoring = False
+if "pipeline_trigger_time" not in st.session_state:
+    st.session_state.pipeline_trigger_time = None
+if "deletion_trigger_time" not in st.session_state:
+    st.session_state.deletion_trigger_time = None
+if "pipeline_last_result" not in st.session_state:
+    st.session_state.pipeline_last_result = None
+if "deletion_last_result" not in st.session_state:
+    st.session_state.deletion_last_result = None
 
 # Show toast notifications after rerun
 if "toast_message" in st.session_state:
@@ -269,19 +283,18 @@ elif page == "⚙️ Process & Monitor":
     # Robot Controls Section
     st.subheader("🤖 Pipeline Controls")
     
-    col_trigger, col_status = st.columns([1, 1])
-    
-    with col_trigger:
-        trigger_clicked = st.button("▶️ Trigger Weekly Pipeline", use_container_width=True)
-    
-    with col_status:
-        check_status_clicked = st.button("📊 Check Latest Run", use_container_width=True)
-    
-    if trigger_clicked:
-        if not GITHUB_TOKEN or not REPO_OWNER:
-            st.error("❌ Missing GitHub credentials in .env")
-        else:
-            with st.status("🚀 Triggering Cloud Pipeline...", expanded=True) as status:
+    # Single unified button that toggles between trigger and stop monitoring
+    if st.session_state.pipeline_monitoring:
+        if st.button("🛑 Stop Auto-Monitoring", use_container_width=True, type="secondary"):
+            st.session_state.pipeline_monitoring = False
+            st.rerun()
+    else:
+        trigger_or_check = st.button("▶️ Trigger Weekly Pipeline", use_container_width=True, type="primary")
+        
+        if trigger_or_check:
+            if not GITHUB_TOKEN or not REPO_OWNER:
+                st.error("❌ Missing GitHub credentials in .env")
+            else:
                 url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/dispatches"
                 headers = {
                     "Authorization": f"Bearer {GITHUB_TOKEN}",
@@ -292,91 +305,193 @@ elif page == "⚙️ Process & Monitor":
                 try:
                     response = requests.post(url, json=data, headers=headers)
                     if response.status_code == 204:
-                        status.update(label="✅ Pipeline Triggered Successfully!", state="complete", expanded=True)
-                        st.success("🎯 **Pipeline workflow has been queued**")
-                        st.info("📊 The pipeline will:\n"
-                                "- Process files from landing zone\n"
-                                "- Validate data against schema\n"
-                                "- Quarantine invalid rows\n"
-                                "- Upsert valid data into partitioned storage")
-                        
-                        st.warning("⏱️ **The workflow is now running on GitHub Actions.** \n\n"
-                                  "Wait 30-60 seconds, then click **📊 Check Latest Run** above to see results.")
-                        
-                        st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
-                        st.caption("⏱️ Check the Actions tab to see processing status, logs, and any errors.")
+                        # Clear last result and store trigger time in UTC and enable monitoring
+                        st.session_state.pipeline_last_result = None
+                        st.session_state.pipeline_trigger_time = datetime.utcnow().timestamp()
+                        st.session_state.pipeline_monitoring = True
+                        st.rerun()
                     else:
-                        status.update(label="❌ Failed to Trigger", state="error", expanded=True)
-                        st.error(f"**HTTP {response.status_code}**")
+                        st.error(f"**Failed to trigger workflow - HTTP {response.status_code}**")
                         with st.expander("📄 Response Details"):
                             st.code(response.text, language="json")
                 except Exception as e:
-                    status.update(label="❌ Connection Error", state="error", expanded=True)
                     st.error(f"**Failed to connect to GitHub API**")
                     st.exception(e)
     
-    if check_status_clicked:
+    # Auto-refreshing status fragment
+    @st.fragment(run_every="15s" if st.session_state.pipeline_monitoring else None)
+    def pipeline_status_monitor():
+        if not st.session_state.pipeline_monitoring:
+            return
+        
         if not GITHUB_TOKEN or not REPO_OWNER:
             st.error("❌ Missing GitHub credentials in .env")
-        else:
-            with st.status("📊 Fetching Latest Pipeline Run...", expanded=True) as status:
-                try:
-                    runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/runs"
-                    headers = {
-                        "Authorization": f"Bearer {GITHUB_TOKEN}",
-                        "Accept": "application/vnd.github.v3+json"
-                    }
+            return
+        
+        with st.status("📊 Pipeline Status...", expanded=True) as status:
+            try:
+                runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/weekly_pipeline.yaml/runs"
+                headers = {
+                    "Authorization": f"Bearer {GITHUB_TOKEN}",
+                    "Accept": "application/vnd.github.v3+json"
+                }
+                
+                response = requests.get(runs_url, headers=headers, params={"per_page": 1})
+                
+                if response.status_code == 200:
+                    data = response.json()
                     
-                    response = requests.get(runs_url, headers=headers, params={"per_page": 1})
-                    
-                    if response.status_code == 200:
-                        data = response.json()
-                        
-                        if data.get("total_count", 0) == 0:
-                            status.update(label="ℹ️ No Pipeline Runs Found", state="complete", expanded=True)
-                            st.info("No workflow runs found. Trigger the pipeline to see results here.")
-                        else:
-                            run = data["workflow_runs"][0]
-                            run_status = run["status"]
-                            run_conclusion = run.get("conclusion")
-                            run_id = run["id"]
-                            created_at = run["created_at"]
-                            updated_at = run["updated_at"]
-                            
-                            if run_status == "completed":
-                                if run_conclusion == "success":
-                                    status.update(label="✅ Latest Run: Success", state="complete", expanded=True)
-                                    st.success(f"**Pipeline completed successfully!**")
-                                    
-                                    st.caption(f"🕐 Started: {created_at}")
-                                    st.caption(f"✓ Completed: {updated_at}")
-                                    st.info("📊 View detailed metrics in Pipeline Execution History below")
-                                    
-                                elif run_conclusion == "failure":
-                                    status.update(label="❌ Latest Run: Failed", state="error", expanded=True)
-                                    st.error("**Pipeline failed!** Check the logs for details.")
-                                else:
-                                    status.update(label=f"⚠️ Latest Run: {run_conclusion}", state="complete", expanded=True)
-                                    st.warning(f"Pipeline ended with status: {run_conclusion}")
-                            elif run_status == "in_progress":
-                                status.update(label="🔄 Pipeline Running...", state="running", expanded=True)
-                                st.info("**Pipeline is currently running**")
-                                st.caption(f"🕐 Started: {created_at}")
-                            else:
-                                status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
-                                st.info(f"Current status: {run_status}")
-                            
-                            st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
-                            
+                    if data.get("total_count", 0) == 0:
+                        # No workflows at all yet
+                        status.update(label="⏳ Workflow Queued...", state="running", expanded=True)
+                        st.info("🚀 **Pipeline workflow has been triggered and is queuing on GitHub Actions.**")
+                        st.caption("⏱️ Waiting for workflow to start... (Auto-refreshing every 15 seconds)")
                     else:
-                        status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
-                        st.error(f"**HTTP {response.status_code}**")
-                        st.code(response.text, language="json")
+                        run = data["workflow_runs"][0]
+                        run_status = run["status"]
+                        run_conclusion = run.get("conclusion")
+                        run_id = run["id"]
+                        created_at = run["created_at"]
+                        updated_at = run["updated_at"]
                         
-                except Exception as e:
-                    status.update(label="❌ Connection Error", state="error", expanded=True)
-                    st.error(f"**Failed to connect to GitHub API**")
-                    st.exception(e)
+                        # Parse the created_at timestamp to compare with trigger time
+                        run_created_timestamp = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").timestamp()
+                        
+                        # Check if this run is from BEFORE we triggered (old run)
+                        # Adding a 5-second buffer to account for timing differences
+                        if st.session_state.pipeline_trigger_time and run_created_timestamp < (st.session_state.pipeline_trigger_time - 5):
+                            # This is an old run, our new one hasn't appeared yet
+                            status.update(label="⏳ Workflow Queued...", state="running", expanded=True)
+                            st.info("🚀 **Pipeline workflow has been triggered and is queuing on GitHub Actions.**")
+                            st.caption("⏱️ Waiting for new workflow to appear... (Auto-refreshing every 15 seconds)")
+                            return
+                        
+                        # This is our new run (or we're just checking status without triggering)
+                        # Clear the trigger time since we found the run
+                        if st.session_state.pipeline_trigger_time:
+                            st.session_state.pipeline_trigger_time = None
+                        
+                        if run_status == "completed":
+                            if run_conclusion == "success":
+                                status.update(label="✅ Pipeline Success", state="complete", expanded=True)
+                                st.success("🎯 **Pipeline completed successfully!**")
+                                st.info("📊 The pipeline:\n"
+                                        "- Processed files from landing zone\n"
+                                        "- Validated data against schema\n"
+                                        "- Quarantined invalid rows\n"
+                                        "- Upserted valid data into partitioned storage")
+                                
+                                st.caption(f"🕐 Started: {created_at}")
+                                st.caption(f"✓ Completed: {updated_at}")
+                                st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                                
+                                # Save result to session state and trigger full page reload
+                                st.session_state.pipeline_last_result = {
+                                    "status": "success",
+                                    "created_at": created_at,
+                                    "updated_at": updated_at,
+                                    "run_id": run_id
+                                }
+                                st.session_state.pipeline_monitoring = False
+                                time.sleep(2)
+                                st.rerun()
+                                
+                            elif run_conclusion == "failure":
+                                status.update(label="❌ Pipeline Failed", state="error", expanded=True)
+                                st.error("**Pipeline failed!** Check the logs for details.")
+                                st.caption(f"🕐 Started: {created_at}")
+                                st.caption(f"❌ Failed: {updated_at}")
+                                st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                                
+                                # Save result to session state and trigger full page reload
+                                st.session_state.pipeline_last_result = {
+                                    "status": "failure",
+                                    "created_at": created_at,
+                                    "updated_at": updated_at,
+                                    "run_id": run_id
+                                }
+                                st.session_state.pipeline_monitoring = False
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                status.update(label=f"⚠️ Pipeline: {run_conclusion}", state="complete", expanded=True)
+                                st.warning(f"Pipeline ended with status: {run_conclusion}")
+                                st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                                
+                                # Save result to session state and trigger full page reload
+                                st.session_state.pipeline_last_result = {
+                                    "status": run_conclusion,
+                                    "created_at": created_at,
+                                    "updated_at": updated_at,
+                                    "run_id": run_id
+                                }
+                                st.session_state.pipeline_monitoring = False
+                                time.sleep(2)
+                                st.rerun()
+                        elif run_status == "in_progress":
+                            status.update(label="🔄 Pipeline Running...", state="running", expanded=True)
+                            st.info("📊 **Processing your data...**")
+                            st.caption(f"🕐 Started: {created_at}")
+                            st.caption("🔄 Auto-refreshing every 15 seconds...")
+                            st.markdown(f"### [📋 View Live Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                        elif run_status == "queued" or run_status == "waiting":
+                            status.update(label="⏳ Pipeline Queued...", state="running", expanded=True)
+                            st.info("🚀 **Pipeline workflow is queued and waiting to start.**")
+                            st.caption(f"🕐 Queued: {created_at}")
+                            st.caption("🔄 Auto-refreshing every 15 seconds...")
+                            st.markdown(f"### [📋 View on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                        else:
+                            status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
+                            st.info(f"Current status: {run_status}")
+                            st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                        
+                else:
+                    status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
+                    st.error(f"**HTTP {response.status_code}**")
+                    st.code(response.text, language="json")
+                    st.session_state.pipeline_monitoring = False
+                    
+            except Exception as e:
+                status.update(label="❌ Connection Error", state="error", expanded=True)
+                st.error(f"**Failed to connect to GitHub API**")
+                st.exception(e)
+                st.session_state.pipeline_monitoring = False
+    
+    # Call the fragment
+    pipeline_status_monitor()
+    
+    # Show last result if monitoring is not active
+    if not st.session_state.pipeline_monitoring and st.session_state.pipeline_last_result:
+        result = st.session_state.pipeline_last_result
+        
+        if result["status"] == "success":
+            with st.status("✅ Most Recent Run: Success", state="complete", expanded=True):
+                st.success("🎯 **Pipeline completed successfully!**")
+                st.info("📊 The pipeline:\n"
+                        "- Processed files from landing zone\n"
+                        "- Validated data against schema\n"
+                        "- Quarantined invalid rows\n"
+                        "- Upserted valid data into partitioned storage")
+                
+                st.caption(f"🕐 Started: {result['created_at']}")
+                st.caption(f"✓ Completed: {result['updated_at']}")
+                st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{result['run_id']})")
+                st.info("💡 Trigger a new pipeline run above to process more data")
+        
+        elif result["status"] == "failure":
+            with st.status("❌ Most Recent Run: Failed", state="error", expanded=True):
+                st.error("**Pipeline failed!** Check the logs for details.")
+                st.caption(f"🕐 Started: {result['created_at']}")
+                st.caption(f"❌ Failed: {result['updated_at']}")
+                st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{result['run_id']})")
+                st.warning("⚠️ Fix any issues and trigger the pipeline again")
+        
+        else:
+            with st.status(f"⚠️ Most Recent Run: {result['status']}", state="complete", expanded=True):
+                st.warning(f"Pipeline ended with status: {result['status']}")
+                st.caption(f"🕐 Started: {result['created_at']}")
+                st.caption(f"✓ Completed: {result['updated_at']}")
+                st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{result['run_id']})")
     
     st.divider()
     
@@ -430,13 +545,35 @@ elif page == "⚙️ Process & Monitor":
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
                     
-                    # Display processing details if available
-                    if 'processing_details' in latest and latest['processing_details']:
+                    # Display processing details dropdown for all runs
+                    if 'processing_details' in combined_logs.columns:
                         st.divider()
-                        st.subheader("📋 Processing Details")
-                        details = latest['processing_details'].split(' | ')
-                        for detail in details:
-                            st.markdown(f"{detail}")
+                        st.subheader("📋 Processing Details by Run")
+                        
+                        # Create dropdown to select which run to view
+                        runs_with_details = combined_logs[combined_logs['processing_details'].notna() & (combined_logs['processing_details'] != '')].copy()
+                        
+                        if len(runs_with_details) > 0:
+                            # Format timestamps for display
+                            runs_with_details['display_timestamp'] = pd.to_datetime(runs_with_details['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                            run_options = [f"Run at {row['display_timestamp']}" for _, row in runs_with_details.iterrows()]
+                            
+                            selected_run = st.selectbox(
+                                "Select a run to view details:",
+                                options=run_options,
+                                key="pipeline_details_selector"
+                            )
+                            
+                            # Find and display the selected run's details
+                            selected_idx = run_options.index(selected_run)
+                            selected_row = runs_with_details.iloc[selected_idx]
+                            
+                            st.write(f"**🕐 {selected_run}**")
+                            details = selected_row['processing_details'].split(' | ')
+                            for detail in details:
+                                st.markdown(f"{detail}")
+                        else:
+                            st.info("No processing details available for any runs.")
                 
                 # Show full history table
                 with st.expander("📊 View Full Execution History"):
@@ -460,17 +597,6 @@ elif page == "⚙️ Process & Monitor":
                             "rows_updated": "Updated"
                         }
                     )
-                    
-                    # Show processing details for each run
-                    if 'processing_details' in display_df.columns:
-                        st.divider()
-                        st.write("**📋 Processing Details by Run:**")
-                        for idx, row in display_df.iterrows():
-                            if row['processing_details']:
-                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
-                                    details = row['processing_details'].split(' | ')
-                                    for detail in details:
-                                        st.markdown(f"{detail}")
                     
                     # Download option
                     csv_export = combined_logs.to_csv(index=False).encode('utf-8')
@@ -629,114 +755,215 @@ elif page == "🗑️ Delete Records":
         # Trigger deletion workflow button (always visible)
         st.subheader("🚀 Process Deletions")
         
-        col_trigger, col_status = st.columns([1, 1])
-        
-        with col_trigger:
-            trigger_delete_clicked = st.button("▶️ Trigger Delete Workflow", use_container_width=True)
-        
-        with col_status:
-            check_delete_status_clicked = st.button("📊 Check Latest Deletion", use_container_width=True)
-        
-        if trigger_delete_clicked:
+        # Single unified button that toggles between trigger and stop monitoring
+        if st.session_state.deletion_monitoring:
+            if st.button("🛑 Stop Auto-Monitoring", use_container_width=True, type="secondary", key="stop_deletion_monitor"):
+                st.session_state.deletion_monitoring = False
+                st.rerun()
+        else:
+            trigger_delete_clicked = st.button("▶️ Trigger Delete Workflow", use_container_width=True, type="primary")
+            
+            if trigger_delete_clicked:
                 if not GITHUB_TOKEN or not REPO_OWNER:
                     st.error("❌ Missing GitHub credentials in .env")
                 else:
-                    with st.status("🚀 Triggering Delete Records Workflow...", expanded=True) as status:
-                        url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/delete_records.yaml/dispatches"
-                        headers = {
-                            "Authorization": f"Bearer {GITHUB_TOKEN}",
-                            "Accept": "application/vnd.github.v3+json"
-                        }
-                        data = {"ref": "main"}
+                    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/delete_records.yaml/dispatches"
+                    headers = {
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json"
+                    }
+                    data = {"ref": "main"}
 
-                        try:
-                            response = requests.post(url, json=data, headers=headers)
-                            if response.status_code == 204:
-                                status.update(label="✅ Delete Workflow Triggered!", state="complete", expanded=True)
-                                st.success("🎯 **Delete records workflow has been queued**")
-                                st.info("📊 The workflow will:\n"
-                                        "- Process all pending deletion requests\n"
-                                        "- Find matching records across partitions\n"
-                                        "- Remove records from parquet files\n"
-                                        "- Save deletion logs")
-                                
-                                st.warning("⏱️ **The workflow is now running on GitHub Actions.** \n\n"
-                                          "Wait 30-60 seconds, then click **📊 Check Latest Deletion** above to see results.")
-                                
-                                st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
-                                st.caption("⏱️ Check the Actions tab to see processing status and logs.")
-                            else:
-                                status.update(label="❌ Failed to Trigger", state="error", expanded=True)
-                                st.error(f"**HTTP {response.status_code}**")
-                                with st.expander("📄 Response Details"):
-                                    st.code(response.text, language="json")
-                        except Exception as e:
-                            status.update(label="❌ Connection Error", state="error", expanded=True)
-                            st.error(f"**Failed to connect to GitHub API**")
-                            st.exception(e)
+                    try:
+                        response = requests.post(url, json=data, headers=headers)
+                        if response.status_code == 204:
+                            # Clear last result and store trigger time in UTC and enable monitoring
+                            st.session_state.deletion_last_result = None
+                            st.session_state.deletion_trigger_time = datetime.utcnow().timestamp()
+                            st.session_state.deletion_monitoring = True
+                            st.rerun()
+                        else:
+                            st.error(f"**Failed to trigger workflow - HTTP {response.status_code}**")
+                            with st.expander("📄 Response Details"):
+                                st.code(response.text, language="json")
+                    except Exception as e:
+                        st.error(f"**Failed to connect to GitHub API**")
+                        st.exception(e)
         
-        if check_delete_status_clicked:
-                if not GITHUB_TOKEN or not REPO_OWNER:
-                    st.error("❌ Missing GitHub credentials in .env")
-                else:
-                    with st.status("📊 Fetching Latest Deletion Run...", expanded=True) as status:
-                        try:
-                            runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/delete_records.yaml/runs"
-                            headers = {
-                                "Authorization": f"Bearer {GITHUB_TOKEN}",
-                                "Accept": "application/vnd.github.v3+json"
-                            }
+        # Auto-refreshing deletion status fragment
+        @st.fragment(run_every="15s" if st.session_state.deletion_monitoring else None)
+        def deletion_status_monitor():
+            if not st.session_state.deletion_monitoring:
+                return
+            
+            if not GITHUB_TOKEN or not REPO_OWNER:
+                st.error("❌ Missing GitHub credentials in .env")
+                return
+            
+            with st.status("📊 Deletion Status...", expanded=True) as status:
+                try:
+                    runs_url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/actions/workflows/delete_records.yaml/runs"
+                    headers = {
+                        "Authorization": f"Bearer {GITHUB_TOKEN}",
+                        "Accept": "application/vnd.github.v3+json"
+                    }
+                    
+                    response = requests.get(runs_url, headers=headers, params={"per_page": 1})
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        
+                        if data.get("total_count", 0) == 0:
+                            # No workflows at all yet
+                            status.update(label="⏳ Workflow Queued...", state="running", expanded=True)
+                            st.info("🚀 **Deletion workflow has been triggered and is queuing on GitHub Actions.**")
+                            st.caption("⏱️ Waiting for workflow to start... (Auto-refreshing every 15 seconds)")
+                        else:
+                            run = data["workflow_runs"][0]
+                            run_status = run["status"]
+                            run_conclusion = run.get("conclusion")
+                            run_id = run["id"]
+                            created_at = run["created_at"]
+                            updated_at = run["updated_at"]
                             
-                            response = requests.get(runs_url, headers=headers, params={"per_page": 1})
+                            # Parse the created_at timestamp to compare with trigger time
+                            run_created_timestamp = datetime.strptime(created_at, "%Y-%m-%dT%H:%M:%SZ").timestamp()
                             
-                            if response.status_code == 200:
-                                data = response.json()
-                                
-                                if data.get("total_count", 0) == 0:
-                                    status.update(label="ℹ️ No Deletion Runs Found", state="complete", expanded=True)
-                                    st.info("No workflow runs found. Trigger the deletion workflow to see results here.")
-                                else:
-                                    run = data["workflow_runs"][0]
-                                    run_status = run["status"]
-                                    run_conclusion = run.get("conclusion")
-                                    run_id = run["id"]
-                                    created_at = run["created_at"]
-                                    updated_at = run["updated_at"]
+                            # Check if this run is from BEFORE we triggered (old run)
+                            # Adding a 5-second buffer to account for timing differences
+                            if st.session_state.deletion_trigger_time and run_created_timestamp < (st.session_state.deletion_trigger_time - 5):
+                                # This is an old run, our new one hasn't appeared yet
+                                status.update(label="⏳ Workflow Queued...", state="running", expanded=True)
+                                st.info("🚀 **Deletion workflow has been triggered and is queuing on GitHub Actions.**")
+                                st.caption("⏱️ Waiting for new workflow to appear... (Auto-refreshing every 15 seconds)")
+                                return
+                            
+                            # This is our new run (or we're just checking status without triggering)
+                            # Clear the trigger time since we found the run
+                            if st.session_state.deletion_trigger_time:
+                                st.session_state.deletion_trigger_time = None
+                            
+                            if run_status == "completed":
+                                if run_conclusion == "success":
+                                    status.update(label="✅ Deletion Success", state="complete", expanded=True)
+                                    st.success("🎯 **Deletion workflow completed successfully!**")
+                                    st.info("📊 The workflow:\n"
+                                            "- Processed all pending deletion requests\n"
+                                            "- Found matching records across partitions\n"
+                                            "- Removed records from parquet files\n"
+                                            "- Saved deletion logs")
                                     
-                                    if run_status == "completed":
-                                        if run_conclusion == "success":
-                                            status.update(label="✅ Latest Deletion: Success", state="complete", expanded=True)
-                                            st.success(f"**Deletion workflow completed successfully!**")
-                                            
-                                            st.caption(f"🕐 Started: {created_at}")
-                                            st.caption(f"✓ Completed: {updated_at}")
-                                            st.info("📊 View detailed deletion metrics in the Deletion Execution History section below")
-                                            
-                                        elif run_conclusion == "failure":
-                                            status.update(label="❌ Latest Deletion: Failed", state="error", expanded=True)
-                                            st.error("**Deletion workflow failed!** Check the logs for details.")
-                                        else:
-                                            status.update(label=f"⚠️ Latest Deletion: {run_conclusion}", state="complete", expanded=True)
-                                            st.warning(f"Deletion workflow ended with status: {run_conclusion}")
-                                    elif run_status == "in_progress":
-                                        status.update(label="🔄 Deletion Running...", state="running", expanded=True)
-                                        st.info("**Deletion workflow is currently running**")
-                                        st.caption(f"🕐 Started: {created_at}")
-                                    else:
-                                        status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
-                                        st.info(f"Current status: {run_status}")
-                                    
+                                    st.caption(f"🕐 Started: {created_at}")
+                                    st.caption(f"✓ Completed: {updated_at}")
                                     st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
                                     
+                                    # Save result to session state and trigger full page reload
+                                    st.session_state.deletion_last_result = {
+                                        "status": "success",
+                                        "created_at": created_at,
+                                        "updated_at": updated_at,
+                                        "run_id": run_id
+                                    }
+                                    st.session_state.deletion_monitoring = False
+                                    time.sleep(2)
+                                    st.rerun()
+                                    
+                                elif run_conclusion == "failure":
+                                    status.update(label="❌ Deletion Failed", state="error", expanded=True)
+                                    st.error("**Deletion workflow failed!** Check the logs for details.")
+                                    st.caption(f"🕐 Started: {created_at}")
+                                    st.caption(f"❌ Failed: {updated_at}")
+                                    st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                                    
+                                    # Save result to session state and trigger full page reload
+                                    st.session_state.deletion_last_result = {
+                                        "status": "failure",
+                                        "created_at": created_at,
+                                        "updated_at": updated_at,
+                                        "run_id": run_id
+                                    }
+                                    st.session_state.deletion_monitoring = False
+                                    time.sleep(2)
+                                    st.rerun()
+                                else:
+                                    status.update(label=f"⚠️ Deletion: {run_conclusion}", state="complete", expanded=True)
+                                    st.warning(f"Deletion workflow ended with status: {run_conclusion}")
+                                    st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                                    
+                                    # Save result to session state and trigger full page reload
+                                    st.session_state.deletion_last_result = {
+                                        "status": run_conclusion,
+                                        "created_at": created_at,
+                                        "updated_at": updated_at,
+                                        "run_id": run_id
+                                    }
+                                    st.session_state.deletion_monitoring = False
+                                    time.sleep(2)
+                                    st.rerun()
+                            elif run_status == "in_progress":
+                                status.update(label="🔄 Deletion Running...", state="running", expanded=True)
+                                st.info("📊 **Processing deletions...**")
+                                st.caption(f"🕐 Started: {created_at}")
+                                st.caption("🔄 Auto-refreshing every 15 seconds...")
+                                st.markdown(f"### [📋 View Live Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                            elif run_status == "queued" or run_status == "waiting":
+                                status.update(label="⏳ Deletion Queued...", state="running", expanded=True)
+                                st.info("🚀 **Deletion workflow is queued and waiting to start.**")
+                                st.caption(f"🕐 Queued: {created_at}")
+                                st.caption("🔄 Auto-refreshing every 15 seconds...")
+                                st.markdown(f"### [📋 View on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
                             else:
-                                status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
-                                st.error(f"**HTTP {response.status_code}**")
-                                st.code(response.text, language="json")
-                                
-                        except Exception as e:
-                            status.update(label="❌ Connection Error", state="error", expanded=True)
-                            st.error(f"**Failed to connect to GitHub API**")
-                            st.exception(e)
+                                status.update(label=f"ℹ️ Status: {run_status}", state="complete", expanded=True)
+                                st.info(f"Current status: {run_status}")
+                                st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{run_id})")
+                            
+                    else:
+                        status.update(label="❌ Failed to Fetch Status", state="error", expanded=True)
+                        st.error(f"**HTTP {response.status_code}**")
+                        st.code(response.text, language="json")
+                        st.session_state.deletion_monitoring = False
+                        
+                except Exception as e:
+                    status.update(label="❌ Connection Error", state="error", expanded=True)
+                    st.error(f"**Failed to connect to GitHub API**")
+                    st.exception(e)
+                    st.session_state.deletion_monitoring = False
+        
+        # Call the fragment
+        deletion_status_monitor()
+        
+        # Show last result if monitoring is not active
+        if not st.session_state.deletion_monitoring and st.session_state.deletion_last_result:
+            result = st.session_state.deletion_last_result
+            
+            if result["status"] == "success":
+                with st.status("✅ Most Recent Run: Success", state="complete", expanded=True):
+                    st.success("🎯 **Deletion workflow completed successfully!**")
+                    st.info("📊 The workflow:\n"
+                            "- Processed all pending deletion requests\n"
+                            "- Found matching records across partitions\n"
+                            "- Removed records from parquet files\n"
+                            "- Saved deletion logs")
+                    
+                    st.caption(f"🕐 Started: {result['created_at']}")
+                    st.caption(f"✓ Completed: {result['updated_at']}")
+                    st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{result['run_id']})")
+                    st.info("💡 Upload more deletion requests above to process additional deletions")
+            
+            elif result["status"] == "failure":
+                with st.status("❌ Most Recent Run: Failed", state="error", expanded=True):
+                    st.error("**Deletion workflow failed!** Check the logs for details.")
+                    st.caption(f"🕐 Started: {result['created_at']}")
+                    st.caption(f"❌ Failed: {result['updated_at']}")
+                    st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{result['run_id']})")
+                    st.warning("⚠️ Fix any issues and trigger the deletion workflow again")
+            
+            else:
+                with st.status(f"⚠️ Most Recent Run: {result['status']}", state="complete", expanded=True):
+                    st.warning(f"Deletion workflow ended with status: {result['status']}")
+                    st.caption(f"🕐 Started: {result['created_at']}")
+                    st.caption(f"✓ Completed: {result['updated_at']}")
+                    st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{result['run_id']})")
             
     except Exception as e:
         st.error(f"Failed to check deletion requests: {e}")
@@ -791,13 +1018,35 @@ elif page == "🗑️ Delete Records":
                     
                     st.caption(f"Executed at: {latest['execution_timestamp']}")
                     
-                    # Display processing details if available
-                    if 'processing_details' in latest and latest['processing_details']:
+                    # Display processing details dropdown for all runs
+                    if 'processing_details' in combined_deletion_logs.columns:
                         st.divider()
-                        st.subheader("📋 Processing Details")
-                        details = latest['processing_details'].split(' | ')
-                        for detail in details:
-                            st.markdown(f"{detail}")
+                        st.subheader("📋 Processing Details by Run")
+                        
+                        # Create dropdown to select which run to view
+                        runs_with_details = combined_deletion_logs[combined_deletion_logs['processing_details'].notna() & (combined_deletion_logs['processing_details'] != '')].copy()
+                        
+                        if len(runs_with_details) > 0:
+                            # Format timestamps for display
+                            runs_with_details['display_timestamp'] = pd.to_datetime(runs_with_details['execution_timestamp']).dt.strftime('%Y-%m-%d %H:%M:%S')
+                            run_options = [f"Run at {row['display_timestamp']}" for _, row in runs_with_details.iterrows()]
+                            
+                            selected_run = st.selectbox(
+                                "Select a run to view details:",
+                                options=run_options,
+                                key="deletion_details_selector"
+                            )
+                            
+                            # Find and display the selected run's details
+                            selected_idx = run_options.index(selected_run)
+                            selected_row = runs_with_details.iloc[selected_idx]
+                            
+                            st.write(f"**🕐 {selected_run}**")
+                            details = selected_row['processing_details'].split(' | ')
+                            for detail in details:
+                                st.markdown(f"{detail}")
+                        else:
+                            st.info("No processing details available for any runs.")
                 
                 # Show full history table
                 with st.expander("📊 View Full Deletion History"):
@@ -820,17 +1069,6 @@ elif page == "🗑️ Delete Records":
                             "partitions_updated": "Partitions"
                         }
                     )
-                    
-                    # Show processing details for each run
-                    if 'processing_details' in display_df.columns:
-                        st.divider()
-                        st.write("**📋 Processing Details by Run:**")
-                        for idx, row in display_df.iterrows():
-                            if row['processing_details']:
-                                with st.expander(f"🕐 Run at {row['execution_timestamp']}"):
-                                    details = row['processing_details'].split(' | ')
-                                    for detail in details:
-                                        st.markdown(f"{detail}")
                     
                     # Download option
                     csv_export = combined_deletion_logs.to_csv(index=False).encode('utf-8')
