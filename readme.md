@@ -5,6 +5,7 @@
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)](https://streamlit.io)
 [![Polars](https://img.shields.io/badge/Data-Polars-CD792C?logo=polars)](https://pola.rs)
 [![Pydantic](https://img.shields.io/badge/Validation-Pydantic-E92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
+[![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](https://github.com/features/actions)
 
 An automated, serverless data pipeline designed to ingest, validate, and aggregate sensitive public health laboratory data. This project implements a **"Human-in-the-Loop"** architecture where invalid data is automatically quarantined, fixed via a UI, and re-injected into the pipeline without code changes.
 
@@ -15,6 +16,97 @@ An automated, serverless data pipeline designed to ingest, validate, and aggrega
 -----
 
 ## 🏗️ Architecture
+
+### Pipeline Workflow
+
+```mermaid
+flowchart TB
+    subgraph USER["👤 User Interface (Streamlit)"]
+        UPLOAD["📤 Upload CSV"]
+        FIX["🛠️ Fix Quarantine"]
+        DELETE["🗑️ Delete Records"]
+        TRIGGER["▶️ Trigger Pipeline"]
+        MONITOR["📊 Auto-Monitor<br/>(Fragments @ 15s)"]
+    end
+
+    subgraph GITHUB["🐙 GitHub Actions"]
+        DISPATCH["workflow_dispatch"]
+        WEEKLY["weekly_pipeline.yaml<br/>(Cron: Weekly)"]
+        DELWF["delete_records.yaml<br/>(Manual Trigger)"]
+    end
+
+    subgraph PIPELINE["⚙️ ETL Pipeline"]
+        VALIDATE["Pydantic Validation"]
+        ROUTE{{"Route Data"}}
+        UPSERT["Upsert Valid Records"]
+        QUARANTINE_OP["Quarantine Invalid"]
+        DELETE_OP["Remove Records"]
+    end
+
+    subgraph AZURE["☁️ Azure Blob Storage"]
+        LANDING[("📂 landing-zone<br/>(Raw CSVs)")]
+        QUAR[("🚨 quarantine<br/>(Failed Validation)")]
+        DATA[("📊 data<br/>(Partitioned Parquet)")]
+        LOGS[("📋 logs<br/>(Execution History)")]
+        DELREQ[("🗑️ deletion-requests<br/>(Pending Deletions)")]
+    end
+
+    subgraph OUTPUT["📈 Outputs"]
+        REPORT["final_cdc_export.csv"]
+        AUDIT["Audit Trail"]
+    end
+
+    %% User actions
+    UPLOAD --> LANDING
+    FIX --> LANDING
+    DELETE --> DELREQ
+    TRIGGER --> DISPATCH
+
+    %% GitHub triggers
+    DISPATCH --> WEEKLY
+    DISPATCH --> DELWF
+    
+    %% Pipeline flows
+    WEEKLY --> VALIDATE
+    LANDING --> VALIDATE
+    VALIDATE --> ROUTE
+    ROUTE -->|"✅ Valid"| UPSERT
+    ROUTE -->|"❌ Invalid"| QUARANTINE_OP
+    UPSERT --> DATA
+    QUARANTINE_OP --> QUAR
+    UPSERT --> LOGS
+    
+    %% Deletion flow
+    DELWF --> DELETE_OP
+    DELREQ --> DELETE_OP
+    DELETE_OP --> DATA
+    DELETE_OP --> LOGS
+    
+    %% Outputs
+    DATA --> REPORT
+    LOGS --> AUDIT
+
+    %% Monitoring loop
+    WEEKLY -.->|"Status API"| MONITOR
+    DELWF -.->|"Status API"| MONITOR
+    MONITOR -.->|"Poll"| GITHUB
+
+    %% Quarantine loop
+    QUAR -.->|"Human Review"| FIX
+
+    %% Styling
+    classDef userStyle fill:#e1f5fe,stroke:#01579b
+    classDef githubStyle fill:#f3e5f5,stroke:#4a148c
+    classDef pipelineStyle fill:#fff3e0,stroke:#e65100
+    classDef azureStyle fill:#e3f2fd,stroke:#0d47a1
+    classDef outputStyle fill:#e8f5e9,stroke:#1b5e20
+
+    class UPLOAD,FIX,DELETE,TRIGGER,MONITOR userStyle
+    class DISPATCH,WEEKLY,DELWF githubStyle
+    class VALIDATE,ROUTE,UPSERT,QUARANTINE_OP,DELETE_OP pipelineStyle
+    class LANDING,QUAR,DATA,LOGS,DELREQ azureStyle
+    class REPORT,AUDIT outputStyle
+```
 
 ### Core Data Flow
 
@@ -86,12 +178,38 @@ A dedicated workflow for data corrections:
   * **Audit Trail:** Logs which sample IDs were deleted from which partitions with full timestamp tracking.
   * **GitHub Actions Integration:** Secure, authenticated deletion via automated workflow.
 
-### 3\. Cloud Abstraction (Security Highlight)
+### 3\. Real-Time Workflow Monitoring with Streamlit Fragments
+
+The Admin Console provides **live status updates** without full page reloads:
+
+  * **`@st.fragment(run_every="15s")`:** Uses Streamlit's fragment feature to auto-poll GitHub Actions API every 15 seconds while a workflow is running.
+  * **Smart Workflow Detection:** Compares UTC timestamps to distinguish between old runs and newly-triggered workflows, preventing false "success" messages from stale data.
+  * **Session State Persistence:** Stores workflow results in `st.session_state` so status messages persist across page interactions.
+  * **Auto-Stop Monitoring:** Automatically stops polling when workflow completes (success, failure, or cancelled) and displays final status.
+  * **Seamless UX:** Users can trigger a pipeline, navigate to other tabs, and return to see live progress or final results.
+
+### 4\. Cloud Abstraction (Security Highlight)
 
 To share this project publicly without exposing Azure credentials, I implemented a **Mock Object Pattern**:
 
   * **Interface Abstraction:** The `mock_azure.py` class perfectly mirrors the official Azure SDK methods (`upload_blob`, `download_blob`, `list_blobs`).
   * **Safety:** The Demo App injects these mock clients instead of real Azure clients, ensuring the full UI workflow runs safely in the browser's memory.
+
+-----
+
+## 🖥️ Admin Console Pages
+
+The Streamlit Admin Console provides a complete self-service interface:
+
+| Page | Purpose |
+| :--- | :--- |
+| **🏠 Start Here** | Landing page with workflow diagrams and navigation guidance |
+| **📤 Upload New Data** | Drag-and-drop CSV upload to landing zone with file preview |
+| **🛠️ Fix Quarantine** | Excel-like data editor to review and correct validation errors |
+| **🗑️ Delete Records** | Upload deletion requests and trigger deletion workflow |
+| **⚙️ Data Ingestion** | Trigger pipeline, monitor progress, view execution history |
+| **📊 Final Report** | View/download the aggregated CDC export with all valid records |
+| **ℹ️ About** | Project context, technical implementation, and author info |
 
 -----
 
