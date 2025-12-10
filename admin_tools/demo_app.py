@@ -100,18 +100,20 @@ def run_mock_pipeline():
             if isinstance(data, str): data = data.encode('utf-8')
             df = pd.read_csv(io.BytesIO(data), dtype=str)
             
-            # VALIDATE EACH ROW
+            # VALIDATE EACH ROW - Use list comprehension for better performance
             valid_count = 0
             error_count = 0
             
-            for index, row in df.iterrows():
+            # Process rows using to_dict('records') instead of iterrows for better performance
+            rows = df.to_dict('records')
+            for row in rows:
                 try:
                     # Pydantic validation
-                    valid_sample = LabResult(**row.to_dict())
+                    valid_sample = LabResult(**row)
                     all_valid_rows.append(valid_sample.model_dump())
                     valid_count += 1
                 except ValidationError as e:
-                    bad_row = row.to_dict()
+                    bad_row = row.copy()
                     bad_row['pipeline_error'] = str(e)
                     bad_row['source_file'] = blob_prop.name
                     all_error_rows.append(bad_row)
@@ -233,11 +235,11 @@ def run_mock_deletions(pending_deletions):
     
     processing_log.append(f"📊 Current data contains {original_count} records")
     
-    # Collect all IDs to delete
+    # Collect all IDs to delete - avoid unnecessary copy
     all_ids_to_delete = set()
     
     for item in pending_deletions:
-        deletion_df = item['dataframe'].copy()
+        deletion_df = item['dataframe']  # No need to copy, we're only reading
         ids_from_file = set(deletion_df['sample_id'].tolist())
         all_ids_to_delete.update(ids_from_file)
         processing_log.append(f"✅ Processed {item['filename']}: {len(ids_from_file)} deletion request(s)")
