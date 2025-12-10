@@ -575,14 +575,7 @@ elif page == "🗑️ Delete Records":
         else:
             st.warning(f"⚠️ Found {len(deletion_blobs)} pending deletion request(s)")
             
-            # List files
-            for blob in deletion_blobs:
-                st.text(f"📄 {blob.name}")
-            
-            st.divider()
-            
-            # Preview pending deletion files
-            st.subheader("📋 Preview Deletion Requests")
+            # Combined preview and file selector
             selected_deletion_file = st.selectbox(
                 "Select file to preview:",
                 [blob.name for blob in deletion_blobs],
@@ -594,22 +587,23 @@ elif page == "🗑️ Delete Records":
                 try:
                     data = blob_client.download_blob().readall()
                     preview_df = pd.read_csv(io.BytesIO(data))
-                    st.caption(f"Showing all rows of **{selected_deletion_file}**")
+                    
+                    st.info(f"📊 **{len(preview_df)}** record(s) to delete")
                     st.dataframe(preview_df, width="stretch")
                     
-                    # Show summary
-                    st.info(f"📊 Total records to delete: **{len(preview_df)}**")
-                    
                     # Delete button with confirmation
-                    st.divider()
-                    if st.button("🗑️ Delete This Request", type="secondary", key="delete_deletion_request"):
-                        st.session_state.confirm_delete_deletion = selected_deletion_file
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("🗑️ Delete This Request", type="secondary", use_container_width=True, key="delete_deletion_request"):
+                            st.session_state.confirm_delete_deletion = selected_deletion_file
                     
                     # Confirmation dialog
                     if st.session_state.get("confirm_delete_deletion") == selected_deletion_file:
-                        st.warning(f"⚠️ Are you sure you want to delete `{selected_deletion_file}`? This action cannot be undone.")
-                        col1, col2 = st.columns(2)
-                        with col1:
+                        with col2:
+                            st.warning("⚠️ Confirm deletion?")
+                        
+                        confirm_col1, confirm_col2 = st.columns(2)
+                        with confirm_col1:
                             if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_deletion"):
                                 try:
                                     blob_client.delete_blob()
@@ -618,7 +612,7 @@ elif page == "🗑️ Delete Records":
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Failed to delete: {e}")
-                        with col2:
+                        with confirm_col2:
                             if st.button("❌ Cancel", key="confirm_no_deletion"):
                                 st.session_state.confirm_delete_deletion = None
                                 st.rerun()
