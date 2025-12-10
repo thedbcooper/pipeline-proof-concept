@@ -40,6 +40,18 @@ if "upload_success" not in st.session_state:
     st.session_state.upload_success = False
 if "deletion_uploader_counter" not in st.session_state:
     st.session_state.deletion_uploader_counter = 0
+if "pipeline_monitoring" not in st.session_state:
+    st.session_state.pipeline_monitoring = False
+if "deletion_monitoring" not in st.session_state:
+    st.session_state.deletion_monitoring = False
+if "pipeline_trigger_time" not in st.session_state:
+    st.session_state.pipeline_trigger_time = None
+if "deletion_trigger_time" not in st.session_state:
+    st.session_state.deletion_trigger_time = None
+if "pipeline_last_result" not in st.session_state:
+    st.session_state.pipeline_last_result = None
+if "deletion_last_result" not in st.session_state:
+    st.session_state.deletion_last_result = None
 
 # Show toast notifications after rerun
 if "toast_message" in st.session_state:
@@ -647,55 +659,132 @@ elif page == "⚙️ Data Ingestion":
     # Robot Controls Section
     st.subheader("🤖 Pipeline Controls")
     
-    if st.button("▶️ Trigger Weekly Pipeline", use_container_width=True):
-        with st.status("🤖 Processing Pipeline...", expanded=True) as status:
-            st.write("🔍 Scanning landing zone...")
-            time.sleep(0.5)
-            result_log = run_mock_pipeline()
-            time.sleep(0.3)
+    # Single unified button that toggles between trigger and stop monitoring
+    if st.session_state.pipeline_monitoring:
+        if st.button("🛑 Stop Auto-Monitoring", use_container_width=True, type="secondary"):
+            st.session_state.pipeline_monitoring = False
+            st.rerun()
+    else:
+        trigger_or_check = st.button("▶️ Trigger Weekly Pipeline", use_container_width=True, type="primary")
+        
+        if trigger_or_check:
+            # Clear last result and store trigger time and enable monitoring
+            st.session_state.pipeline_last_result = None
+            st.session_state.pipeline_trigger_time = time.time()
+            st.session_state.pipeline_monitoring = True
+            st.rerun()
+    
+    # Auto-refreshing status fragment (simulates GitHub Actions polling)
+    @st.fragment(run_every="3s" if st.session_state.pipeline_monitoring else None)
+    def pipeline_status_monitor():
+        if not st.session_state.pipeline_monitoring:
+            return
+        
+        with st.status("📊 Pipeline Status...", expanded=True) as status:
+            # Calculate elapsed time since trigger
+            elapsed = time.time() - st.session_state.pipeline_trigger_time
             
-            if "CRITICAL ERROR" in result_log or "Failed" in result_log:
-                status.update(label="❌ Pipeline Failed", state="error", expanded=True)
-                st.error("⚠️ **Pipeline encountered errors**")
-                with st.expander("📜 View Error Details", expanded=True):
-                    st.code(result_log, language="text")
-            elif "No new files" in result_log:
-                status.update(label="⏸️ Pipeline Idle", state="complete", expanded=True)
-                st.info("📭 **No files to process**")
-                st.caption(result_log)
+            # Simulate workflow stages
+            if elapsed < 2:
+                # Stage 1: Queued
+                status.update(label="⏳ Workflow Queued...", state="running", expanded=True)
+                st.info("🚀 **Pipeline workflow has been triggered and is queuing.**")
+                st.caption("⏱️ Waiting for workflow to start... (Auto-refreshing every 3 seconds)")
+            elif elapsed < 4:
+                # Stage 2: Starting
+                status.update(label="🔄 Workflow Starting...", state="running", expanded=True)
+                st.info("📦 **Setting up environment...**")
+                st.caption("🔄 Auto-refreshing every 3 seconds...")
+            elif elapsed < 6:
+                # Stage 3: Running
+                status.update(label="🔄 Pipeline Running...", state="running", expanded=True)
+                st.info("📊 **Processing your data...**")
+                st.caption("🔄 Auto-refreshing every 3 seconds...")
             else:
-                status.update(label="✅ Pipeline Complete!", state="complete", expanded=True)
+                # Stage 4: Execute and complete
+                result_log = run_mock_pipeline()
                 
-                # Parse the METRICS from the log (new format)
-                if "METRICS|" in result_log:
-                    metrics_line = [l for l in result_log.split('\n') if 'METRICS|' in l][0]
-                    _, files_processed, rows_quarantined, rows_inserted, rows_updated = metrics_line.split('|')
+                if "CRITICAL ERROR" in result_log or "Failed" in result_log:
+                    status.update(label="❌ Pipeline Failed", state="error", expanded=True)
+                    st.error("⚠️ **Pipeline encountered errors**")
+                    with st.expander("📜 View Error Details", expanded=True):
+                        st.code(result_log, language="text")
                     
-                    # Display summary
-                    st.success("✨ **Pipeline executed successfully!**")
-                    st.balloons()
+                    st.session_state.pipeline_last_result = {
+                        "status": "failure",
+                        "log": result_log
+                    }
+                    st.session_state.pipeline_monitoring = False
+                    time.sleep(2)
+                    st.rerun()
                     
-                    col1, col2, col3, col4 = st.columns(4)
-                    with col1:
-                        st.metric("Files Processed", files_processed)
-                    with col2:
-                        st.metric("Rows Quarantined", rows_quarantined, delta=None if rows_quarantined == '0' else f"-{rows_quarantined}", delta_color="inverse")
-                    with col3:
-                        st.metric("Rows Inserted", rows_inserted)
-                    with col4:
-                        st.metric("Rows Updated", rows_updated)
+                elif "No new files" in result_log:
+                    status.update(label="✅ Pipeline Complete (No Files)", state="complete", expanded=True)
+                    st.info("📭 **No files to process**")
+                    
+                    st.session_state.pipeline_last_result = {
+                        "status": "success",
+                        "message": "No files to process"
+                    }
+                    st.session_state.pipeline_monitoring = False
+                    time.sleep(2)
+                    st.rerun()
+                    
                 else:
-                    # Fallback to old parsing method
-                    st.success("✨ **Pipeline executed successfully!**")
+                    status.update(label="✅ Pipeline Success", state="complete", expanded=True)
+                    st.success("🎯 **Pipeline completed successfully!**")
+                    st.info("📊 The pipeline:\n"
+                            "- Processed files from landing zone\n"
+                            "- Validated data against schema\n"
+                            "- Quarantined invalid rows\n"
+                            "- Upserted valid data into storage")
+                    
+                    # Parse metrics
+                    metrics = {}
+                    if "METRICS|" in result_log:
+                        metrics_line = [l for l in result_log.split('\n') if 'METRICS|' in l][0]
+                        _, files_processed, rows_quarantined, rows_inserted, rows_updated = metrics_line.split('|')
+                        metrics = {
+                            "files_processed": files_processed,
+                            "rows_quarantined": rows_quarantined,
+                            "rows_inserted": rows_inserted,
+                            "rows_updated": rows_updated
+                        }
+                    
+                    st.session_state.pipeline_last_result = {
+                        "status": "success",
+                        "metrics": metrics,
+                        "log": result_log
+                    }
+                    st.session_state.pipeline_monitoring = False
+                    time.sleep(2)
+                    st.rerun()
+    
+    # Call the fragment
+    pipeline_status_monitor()
+    
+    # Show last result if monitoring is not active
+    if not st.session_state.pipeline_monitoring and st.session_state.pipeline_last_result:
+        result = st.session_state.pipeline_last_result
+        
+        if result["status"] == "success":
+            with st.status("✅ Most Recent Run: Success", state="complete", expanded=True):
+                st.success("🎯 **Pipeline completed successfully!**")
+                st.info("📊 The pipeline:\n"
+                        "- Processed files from landing zone\n"
+                        "- Validated data against schema\n"
+                        "- Quarantined invalid rows\n"
+                        "- Upserted valid data into storage")
                 
-                # Clean log for display (remove METRICS line)
-                display_log = '\n'.join([line for line in result_log.split('\n') if not line.startswith('METRICS|')])
-                with st.expander("📜 View Detailed Log"):
-                    st.code(display_log, language="text")
-                
-                # Rerun to refresh the landing zone view
-                time.sleep(1)  # Brief pause to let user see the results
-                st.rerun()
+                st.info("💡 Trigger a new pipeline run above to process more data")
+        
+        elif result["status"] == "failure":
+            with st.status("❌ Most Recent Run: Failed", state="error", expanded=True):
+                st.error("**Pipeline failed!** Check the logs for details.")
+                if "log" in result:
+                    with st.expander("📜 View Error Details"):
+                        st.code(result["log"], language="text")
+                st.warning("⚠️ Fix any issues and trigger the pipeline again")
     
     st.divider()
     
@@ -735,6 +824,20 @@ elif page == "⚙️ Data Ingestion":
                 # Display summary metrics from most recent run
                 if len(combined_logs) > 0:
                     latest = combined_logs.iloc[0]
+                    
+                    st.write("**Latest Pipeline Run:**")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Files Processed", int(latest['files_processed']))
+                    with col2:
+                        st.metric("Rows Quarantined", int(latest['rows_quarantined']))
+                    with col3:
+                        st.metric("Rows Inserted", int(latest['rows_inserted']))
+                    with col4:
+                        st.metric("Rows Updated", int(latest['rows_updated']))
+                    
+                    st.caption(f"Executed at: {latest['execution_timestamp']}")
                     
                     # Display processing details dropdown for all runs
                     if 'processing_details' in combined_logs.columns:
@@ -953,26 +1056,99 @@ elif page == "🗑️ Delete Records":
             
             # Trigger deletion workflow button
             st.subheader("🚀 Process Deletions")
-            if st.button("▶️ Trigger Delete Records Workflow", type="primary", use_container_width=True):
-                with st.status("🚀 Processing Delete Workflow...", expanded=True) as status:
-                    import time
-                    st.write("🔍 Scanning deletion-requests container...")
-                    time.sleep(0.5)
-                    
-                    # Actually perform the deletions
-                    total_deleted, partitions_updated = run_mock_deletions()
-                    
-                    if total_deleted > 0:
-                        status.update(label="✅ Deletions Complete!", state="complete")
-                        st.success(f"🗑️ Successfully deleted {total_deleted} record(s)!")
-                        st.info("📊 View detailed deletion metrics in the Deletion Execution History section below")
-                    else:
-                        status.update(label="✅ Workflow Complete", state="complete")
-                        st.info("ℹ️ No matching records found to delete.")
-                    
-                    # Rerun to refresh the pending deletion requests view
-                    time.sleep(1)  # Brief pause to let user see the results
+            
+            # Single unified button that toggles between trigger and stop monitoring
+            if st.session_state.deletion_monitoring:
+                if st.button("🛑 Stop Auto-Monitoring", use_container_width=True, type="secondary", key="stop_deletion_monitor"):
+                    st.session_state.deletion_monitoring = False
                     st.rerun()
+            else:
+                trigger_delete_clicked = st.button("▶️ Trigger Delete Records Workflow", use_container_width=True, type="primary")
+                
+                if trigger_delete_clicked:
+                    # Clear last result and store trigger time and enable monitoring
+                    st.session_state.deletion_last_result = None
+                    st.session_state.deletion_trigger_time = time.time()
+                    st.session_state.deletion_monitoring = True
+                    st.rerun()
+            
+            # Auto-refreshing deletion status fragment (simulates GitHub Actions polling)
+            @st.fragment(run_every="3s" if st.session_state.deletion_monitoring else None)
+            def deletion_status_monitor():
+                if not st.session_state.deletion_monitoring:
+                    return
+                
+                with st.status("📊 Deletion Status...", expanded=True) as status:
+                    # Calculate elapsed time since trigger
+                    elapsed = time.time() - st.session_state.deletion_trigger_time
+                    
+                    # Simulate workflow stages
+                    if elapsed < 2:
+                        # Stage 1: Queued
+                        status.update(label="⏳ Workflow Queued...", state="running", expanded=True)
+                        st.info("🚀 **Deletion workflow has been triggered and is queuing.**")
+                        st.caption("⏱️ Waiting for workflow to start... (Auto-refreshing every 3 seconds)")
+                    elif elapsed < 4:
+                        # Stage 2: Starting
+                        status.update(label="🔄 Workflow Starting...", state="running", expanded=True)
+                        st.info("📦 **Setting up environment...**")
+                        st.caption("🔄 Auto-refreshing every 3 seconds...")
+                    elif elapsed < 6:
+                        # Stage 3: Running
+                        status.update(label="🔄 Deletion Running...", state="running", expanded=True)
+                        st.info("📊 **Processing deletions...**")
+                        st.caption("🔄 Auto-refreshing every 3 seconds...")
+                    else:
+                        # Stage 4: Execute and complete
+                        total_deleted, partitions_updated = run_mock_deletions()
+                        
+                        if total_deleted > 0:
+                            status.update(label="✅ Deletion Success", state="complete", expanded=True)
+                            st.success("🎯 **Deletion workflow completed successfully!**")
+                            st.info("📊 The workflow:\n"
+                                    "- Processed all pending deletion requests\n"
+                                    "- Found matching records\n"
+                                    "- Removed records from storage\n"
+                                    "- Saved deletion logs")
+                            
+                            st.session_state.deletion_last_result = {
+                                "status": "success",
+                                "total_deleted": total_deleted,
+                                "partitions_updated": partitions_updated
+                            }
+                            st.session_state.deletion_monitoring = False
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            status.update(label="✅ Workflow Complete (No Matches)", state="complete", expanded=True)
+                            st.info("ℹ️ No matching records found to delete.")
+                            
+                            st.session_state.deletion_last_result = {
+                                "status": "success",
+                                "total_deleted": 0,
+                                "partitions_updated": 0
+                            }
+                            st.session_state.deletion_monitoring = False
+                            time.sleep(2)
+                            st.rerun()
+            
+            # Call the fragment
+            deletion_status_monitor()
+            
+            # Show last result if monitoring is not active
+            if not st.session_state.deletion_monitoring and st.session_state.deletion_last_result:
+                result = st.session_state.deletion_last_result
+                
+                if result["status"] == "success":
+                    with st.status("✅ Most Recent Run: Success", state="complete", expanded=True):
+                        st.success("🎯 **Deletion workflow completed successfully!**")
+                        st.info("📊 The workflow:\n"
+                                "- Processed all pending deletion requests\n"
+                                "- Found matching records\n"
+                                "- Removed records from storage\n"
+                                "- Saved deletion logs")
+                        
+                        st.info("💡 Trigger a new workflow above to process additional deletions")
     
     except Exception as e:
         st.error(f"Failed to process deletion requests: {e}")
@@ -1126,7 +1302,7 @@ elif page == "🛠️ Fix Quarantine":
         if staged_names:
             st.info("Files staged for upload below.")
         else:
-            st.success("🎉 Quarantine is empty! Move to Data Ingestion.")
+            st.success("🎉 Done! Quarantine is empty. Go to ⚙️ Data Ingestion to trigger the pipeline.")
     else:
         sel = st.selectbox("Select file:", remaining_blobs)
         if sel:

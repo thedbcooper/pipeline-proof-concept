@@ -987,7 +987,7 @@ elif page == "🗑️ Delete Records":
                     st.caption(f"🕐 Started: {result['created_at']}")
                     st.caption(f"✓ Completed: {result['updated_at']}")
                     st.markdown(f"### [📋 View Full Logs on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions/runs/{result['run_id']})")
-                    st.info("💡 Upload more deletion requests above to process additional deletions")
+                    st.info("💡 Trigger a new workflow above to process additional deletions")
             
             elif result["status"] == "failure":
                 with st.status("❌ Most Recent Run: Failed", state="error", expanded=True):
@@ -1135,7 +1135,7 @@ elif page == "🛠️ Fix Quarantine":
         if staged_names:
             st.info("⚠️ Files are staged for upload below!")
         else:
-            st.success("🎉 Quarantine is empty! Move to Data Ingestion.")
+            st.success("🎉 Done! Quarantine is empty. Go to ⚙️ Data Ingestion to trigger the pipeline.")
     else:
         selected_file = st.selectbox(
             "Select a file to fix:", 
