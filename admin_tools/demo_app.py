@@ -359,7 +359,7 @@ with st.sidebar:
     # NAVIGATION
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "🗑️ Delete Records", "⚙️ Process & Monitor", "📊 Final Report"],
+        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "🗑️ Delete Records", "⚙️ Data Ingestion", "📊 Final Report"],
         key="nav_selection"
     )
 
@@ -399,7 +399,7 @@ if page == "🏠 Start Here":
         st.warning("""
         **How to run it:**
         * **Production:** Auto-runs weekly (Cron Job).
-        * **Admin/Demo:** Go to **⚙️ Process & Monitor** tab and click **▶️ Trigger Weekly Pipeline**.
+        * **Admin/Demo:** Go to **⚙️ Data Ingestion** tab and click **▶️ Trigger Weekly Pipeline**.
         """)
 
     with col3:
@@ -432,7 +432,7 @@ if page == "🏠 Start Here":
     
     with q_col4:
         st.markdown("### 4. Re-Upload & Process")
-        st.markdown("Upload fixed files back to landing zone, then go to **⚙️ Process & Monitor** to trigger ingestion.")
+        st.markdown("Upload fixed files back to landing zone, then go to **⚙️ Data Ingestion** to trigger ingestion.")
         st.success("📍 *Click 'Upload All Fixed Files', then trigger pipeline*")
 
     st.divider()
@@ -486,7 +486,7 @@ elif page == "📤 Upload New Data":
     
     # Show success message after rerun
     if st.session_state.upload_success:
-        st.success("✨ Done! All files uploaded to Landing Zone. Go to **⚙️ Process & Monitor** to trigger the pipeline.")
+        st.success("✨ Done! All files uploaded to Landing Zone. Go to **⚙️ Data Ingestion** to trigger the pipeline.")
         st.session_state.upload_success = False
     
     st.divider()
@@ -512,10 +512,10 @@ elif page == "📤 Upload New Data":
         st.info("📭 No files selected. Drag and drop CSV files above to get started.")
 
 # ==========================================
-# PAGE 2: PROCESS & MONITOR
+# PAGE 2: DATA INGESTION
 # ==========================================
-elif page == "⚙️ Process & Monitor":
-    st.title("⚙️ Process & Monitor")
+elif page == "⚙️ Data Ingestion":
+    st.title("⚙️ Data Ingestion")
     st.caption("View queued files, trigger pipeline processing, and review execution history")
     
     with st.expander("🔧 **How this works in Production**", expanded=False):
@@ -1088,7 +1088,7 @@ elif page == "🛠️ Fix Quarantine":
         if staged_names:
             st.info("Files staged for upload below.")
         else:
-            st.success("🎉 Quarantine is empty! Move to Process & Monitor.")
+            st.success("🎉 Quarantine is empty! Move to Data Ingestion.")
     else:
         sel = st.selectbox("Select file:", remaining_blobs)
         if sel:
