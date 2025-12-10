@@ -374,7 +374,7 @@ with st.sidebar:
     # NAVIGATION
     page = st.radio(
         "Go to:", 
-        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "🗑️ Delete Records", "⚙️ Data Ingestion", "📊 Final Report"],
+        ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "🗑️ Delete Records", "⚙️ Data Ingestion", "📊 Final Report", "ℹ️ About"],
         key="nav_selection"
     )
     
@@ -1304,3 +1304,130 @@ elif page == "📊 Final Report":
             st.divider()
             st.subheader("Data Preview")
             st.dataframe(st.session_state.preview_df, width="stretch")
+
+# ==========================================
+# PAGE 6: ABOUT
+# ==========================================
+elif page == "ℹ️ About":
+    st.title("ℹ️ About This Project")
+    
+    st.markdown("""
+    ## The Challenge
+    
+    As an epidemiologist in a state public health department, I observed a critical gap in our data infrastructure. 
+    Program teams needed faster access to their data for real-time decision-making, but traditional centralized 
+    data warehouses created bottlenecks. When disease surveillance data arrived in varied formats from multiple 
+    partners, manual review and correction processes delayed insights by days or weeks.
+    
+    ## The Solution
+    
+    I designed and built this agile data pipeline to enable **self-service analytics** - empowering public health 
+    teams to manage their own data flows without waiting on IT support. The system automatically validates incoming 
+    lab results against schema requirements, quarantines errors for human review, and maintains a clean master 
+    dataset ready for immediate analysis.
+    
+    ## Technical Implementation
+    
+    This project demonstrates full-stack data engineering capabilities:
+    """)
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        **Cloud Infrastructure:**
+        - Azure Lakehouse Architecture
+        - Scalable blob storage with partitioned Parquet files
+        - Year/week partitioning for efficient queries
+        - Automated backups and version control
+        
+        **Data Quality:**
+        - Pydantic validation models for type safety
+        - Schema enforcement at ingestion
+        - Detailed error logging and quarantine system
+        - Audit trail for all data transformations
+        """)
+    
+    with col2:
+        st.markdown("""
+        **Automation & DevOps:**
+        - GitHub Actions CI/CD pipelines
+        - Automated weekly batch processing
+        - Manual override capability for ad-hoc runs
+        - Real-time workflow monitoring with Streamlit fragments
+        
+        **User Experience:**
+        - Streamlit admin interface for non-technical users
+        - Excel-like data editor for error correction
+        - Self-service file upload and monitoring
+        - Downloadable execution logs and reports
+        """)
+    
+    st.divider()
+    
+    st.markdown("""
+    ## Impact
+    
+    This system demonstrates how modern data engineering practices can **democratize data access** in public health, 
+    reducing time-to-insight while maintaining data integrity and audit trails required for regulatory compliance.
+    
+    By removing technical barriers, epidemiologists can focus on what they do best - analyzing disease trends and 
+    protecting public health - rather than waiting for data access or wrestling with manual file processing.
+    
+    ## Technical Skills Demonstrated
+    """)
+    
+    skill_col1, skill_col2, skill_col3 = st.columns(3)
+    
+    with skill_col1:
+        st.markdown("""
+        **Languages & Frameworks:**
+        - Python (Pandas, Pydantic)
+        - SQL
+        - YAML (CI/CD)
+        - Markdown
+        """)
+    
+    with skill_col2:
+        st.markdown("""
+        **Cloud & Infrastructure:**
+        - Azure Blob Storage
+        - Azure Data Lake
+        - GitHub Actions
+        - Container orchestration
+        """)
+    
+    with skill_col3:
+        st.markdown("""
+        **Data Engineering:**
+        - ETL pipeline design
+        - Data validation & quality
+        - Lakehouse architecture
+        - Error handling workflows
+        """)
+    
+    st.divider()
+    
+    st.success("""
+    **Built by Daniel B. Cooper** | Epidemiologist & Aspiring Data Engineer
+    
+    This portfolio project showcases the intersection of public health domain expertise and modern data engineering practices.
+    """)
+    
+    # Contact section
+    st.markdown("### 📬 Connect With Me")
+    
+    st.markdown("""
+    
+    <div style='display: flex; gap: 20px; align-items: center; margin-top: 10px;'>
+        <a href='https://github.com/thedbcooper' target='_blank' title='GitHub' class='profile-link'>
+            <img src='https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png' width='50' height='50' style='filter: invert(1);'/>
+        </a>
+        <a href='https://www.linkedin.com/in/danielblakecooper/' target='_blank' title='LinkedIn' class='profile-link'>
+            <img src='https://cdn-icons-png.flaticon.com/512/174/174857.png' width='50' height='50'/>
+        </a>
+        <a href='https://orcid.org/0000-0002-2218-7916' target='_blank' title='ORCID' class='profile-link'>
+            <img src='https://orcid.org/assets/vectors/orcid.logo.icon.svg' width='50' height='50'/>
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
