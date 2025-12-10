@@ -529,8 +529,12 @@ elif page == "⚙️ Process & Monitor":
         - Production pipeline runs automatically via cron schedule (weekly)
         - Manual triggers available for ad-hoc processing
         
-        **Real-time Status:**
-        - "Check Latest Run" queries GitHub Actions API for workflow run status
+        **Real-time Auto-Monitoring with Streamlit Fragments:**
+        - Uses `@st.fragment(run_every="15s")` to poll GitHub Actions API every 15 seconds
+        - Automatically detects when new workflow starts (vs. old runs) using UTC timestamps
+        - Shows live status updates without full page reloads for better UX
+        - Auto-stops monitoring when workflow completes and triggers full page refresh
+        - Persists completion status in session state so success messages remain visible
         - Links directly to GitHub Actions logs for detailed debugging
         
         *In this demo, the pipeline runs locally in-browser using Python logic that mirrors the production scripts.*
@@ -785,6 +789,13 @@ elif page == "🗑️ Delete Records":
         - The workflow scans all year/week partitions in the `data` container
         - Matching records are removed from Parquet files and re-saved
         - Deletion logs are written to the `logs` container for compliance
+        
+        **Auto-Monitoring with Streamlit Fragments:**
+        - Uses `@st.fragment(run_every="15s")` to automatically poll GitHub Actions API
+        - Detects new deletion workflows vs. historical runs using timestamp comparison
+        - Provides live progress updates every 15 seconds without interrupting the UI
+        - Automatically stops monitoring and refreshes page when deletion completes
+        - Success/failure status persists in session state for visibility after completion
         
         *In this demo, deletions are processed immediately in-memory against mock data.*
         """)
