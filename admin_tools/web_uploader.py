@@ -11,20 +11,9 @@ from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
 st.set_page_config(
-    page_title="Lab Data Admin - Production",
+    page_title="🧬 Agile Data Pipeline: Admin Console",
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'About': """### Lab Data Pipeline Admin Console
-        **Built by Daniel B. Cooper**
-        
-        Production admin interface for Azure-based data pipeline.
-        
-        - [GitHub](https://github.com/thedbcooper)
-        - [LinkedIn](https://www.linkedin.com/in/danielblakecooper/)
-        - [ORCID](https://orcid.org/0000-0002-2218-7916)
-        """
-    }
+    initial_sidebar_state="expanded"
 )
 
 load_dotenv()
@@ -81,7 +70,7 @@ except Exception as e:
 # SIDEBAR: NAVIGATION & CONTROLS
 # ==========================================
 with st.sidebar:
-    st.header("🧬 Lab Data Admin")
+    st.header("🧬 Agile Data Pipeline: Admin Console")
     st.caption(f"Storage: `{ACCOUNT_NAME}`")
     
     page = st.radio(
@@ -130,8 +119,8 @@ with st.sidebar:
 if page == "🏠 Start Here":
     st.title("🧬 Agile Data Pipeline: Admin Console")
     st.markdown("""
-    **Welcome.** This dashboard allows Public Health Epidemiologists to safely manage the flow of sensitive lab data 
-    into the Azure Lakehouse without needing to write code.
+    **Welcome.** This dashboard allows users to safely manage the flow of data 
+    into an Azure Lakehouse without needing to write code.
     """)
     
     st.divider()
@@ -1266,11 +1255,6 @@ elif page == "🛠️ Fix Quarantine":
             st.session_state.staged_fixes = []
             st.session_state.upload_success = True
             st.rerun()
-        
-        # Show success message after rerun
-        if st.session_state.upload_success:
-            st.success("✨ Done! All fixed files uploaded to Landing Zone.")
-            st.session_state.upload_success = False
 
 # ==========================================
 # PAGE 5: FINAL REPORT

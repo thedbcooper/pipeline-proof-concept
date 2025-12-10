@@ -24,20 +24,9 @@ except ImportError:
 
 # --- CONFIGURATION ---
 st.set_page_config(
-    page_title="Lab Data Admin (Portfolio Demo)", 
+    page_title="🧬 Agile Data Pipeline: Admin Console", 
     layout="wide",
-    initial_sidebar_state="expanded",
-    menu_items={
-        'About': """### Lab Data Pipeline Admin Console
-        **Built by Daniel B. Cooper**
-        
-        An agile data engineering solution.
-        
-        - [GitHub](https://github.com/thedbcooper)
-        - [LinkedIn](https://www.linkedin.com/in/danielblakecooper/)
-        - [ORCID](https://orcid.org/0000-0002-2218-7916)
-        """
-    }
+    initial_sidebar_state="expanded"
 )
 
 # ==========================================
@@ -416,7 +405,7 @@ with st.sidebar:
 # PAGE 0: LANDING PAGE
 # ==========================================
 if page == "🏠 Start Here":
-    st.title("🧬 Lab Data Pipeline: Admin Console")
+    st.title("🧬 Agile Data Pipeline: Admin Console")
     st.markdown("""
     **Welcome.** This dashboard allows users to safely manage the flow of data
     into an Azure Lakehouse without needing to write code.
@@ -1241,11 +1230,6 @@ elif page == "🛠️ Fix Quarantine":
             st.session_state.staged_fixes = []
             st.session_state.upload_success = True
             st.rerun()
-        
-        # Show success message after rerun
-        if st.session_state.upload_success:
-            st.success("✨ Done! All fixed files uploaded to Landing Zone.")
-            st.session_state.upload_success = False
 
 # ==========================================
 # PAGE 5: FINAL REPORT
