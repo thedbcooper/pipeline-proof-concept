@@ -319,7 +319,7 @@ def _save_mock_deletion_log(metrics, processing_log):
 # SIDEBAR: NAVIGATION & CONTROLS
 # ==========================================
 with st.sidebar:
-    st.header("🧬 Lab Data Admin")
+    st.header("🧬 Agile Data Pipeline: Demo Admin Console")
     st.info("ℹ️ **DEMO MODE ACTIVE**\n\nThis app uses in-memory mock storage. No real Azure resources are connected.")
     
     with st.expander("🏗️ **Production Architecture**"):

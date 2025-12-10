@@ -64,7 +64,7 @@ with st.sidebar:
 # PAGE 0: LANDING PAGE
 # ==========================================
 if page == "🏠 Start Here":
-    st.title("🧬 Lab Data Pipeline: Admin Console")
+    st.title("🧬 Agile Data Pipeline: Admin Console")
     st.markdown("""
     **Welcome.** This dashboard allows Public Health Epidemiologists to safely manage the flow of sensitive lab data 
     into the Azure Lakehouse without needing to write code.
@@ -299,6 +299,10 @@ elif page == "⚙️ Process & Monitor":
                                 "- Validate data against schema\n"
                                 "- Quarantine invalid rows\n"
                                 "- Upsert valid data into partitioned storage")
+                        
+                        st.warning("⏱️ **The workflow is now running on GitHub Actions.** \n\n"
+                                  "Wait 30-60 seconds, then click **📊 Check Latest Run** above to see results.")
+                        
                         st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
                         st.caption("⏱️ Check the Actions tab to see processing status, logs, and any errors.")
                     else:
@@ -655,6 +659,10 @@ elif page == "🗑️ Delete Records":
                                         "- Find matching records across partitions\n"
                                         "- Remove records from parquet files\n"
                                         "- Save deletion logs")
+                                
+                                st.warning("⏱️ **The workflow is now running on GitHub Actions.** \n\n"
+                                          "Wait 30-60 seconds, then click **📊 Check Latest Deletion** above to see results.")
+                                
                                 st.markdown(f"### 👉 [View Real-Time Progress on GitHub →](https://github.com/{REPO_OWNER}/{REPO_NAME}/actions)")
                                 st.caption("⏱️ Check the Actions tab to see processing status and logs.")
                             else:
