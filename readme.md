@@ -7,7 +7,7 @@
 [![Pydantic](https://img.shields.io/badge/Validation-Pydantic-E92063?logo=pydantic&logoColor=white)](https://docs.pydantic.dev)
 [![GitHub Actions](https://img.shields.io/badge/CI%2FCD-GitHub%20Actions-2088FF?logo=github-actions&logoColor=white)](https://github.com/features/actions)
 
-An automated, serverless data pipeline designed to ingest, validate, and aggregate sensitive public health laboratory data. This project implements a **"Human-in-the-Loop"** architecture where invalid data is automatically quarantined, fixed via a UI, and re-injected into the pipeline without code changes.
+An automated, serverless data pipeline designed to ingest, validate, and aggregate data. This project implements a **"Human-in-the-Loop"** architecture where invalid data is automatically quarantined, fixed via a UI, and re-injected into the pipeline without code changes.
 
 ### 🎮 **[Live Portfolio Demo](https://public-health-data-agile-pipeline.streamlit.app/)**
 
