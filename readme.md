@@ -24,15 +24,17 @@ flowchart TB
     subgraph USER["👤 User Interface (Streamlit)"]
         UPLOAD["📤 Upload CSV"]
         FIX["🛠️ Fix Quarantine"]
-        DELETE["🗑️ Delete Records"]
-        TRIGGER["▶️ Trigger Pipeline"]
+        DELETE_UPLOAD["🗑️ Upload Deletion Request"]
+        TRIGGER_PIPE["▶️ Trigger Pipeline"]
+        TRIGGER_DEL["▶️ Trigger Deletion"]
         MONITOR["📊 Auto-Monitor<br/>(Fragments @ 15s)"]
     end
 
     subgraph GITHUB["🐙 GitHub Actions"]
-        DISPATCH["workflow_dispatch"]
+        DISPATCH_PIPE["workflow_dispatch"]
+        DISPATCH_DEL["workflow_dispatch"]
         WEEKLY["weekly_pipeline.yaml<br/>(Cron: Weekly)"]
-        DELWF["delete_records.yaml<br/>(Manual Trigger)"]
+        DELWF["delete_records.yaml<br/>(Manual Only)"]
     end
 
     subgraph PIPELINE["⚙️ ETL Pipeline"]
@@ -59,12 +61,13 @@ flowchart TB
     %% User actions
     UPLOAD --> LANDING
     FIX --> LANDING
-    DELETE --> DELREQ
-    TRIGGER --> DISPATCH
+    DELETE_UPLOAD --> DELREQ
+    TRIGGER_PIPE --> DISPATCH_PIPE
+    TRIGGER_DEL --> DISPATCH_DEL
 
     %% GitHub triggers
-    DISPATCH --> WEEKLY
-    DISPATCH --> DELWF
+    DISPATCH_PIPE --> WEEKLY
+    DISPATCH_DEL --> DELWF
     
     %% Pipeline flows
     WEEKLY --> VALIDATE
