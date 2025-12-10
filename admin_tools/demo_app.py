@@ -49,10 +49,11 @@ def get_mock_clients():
         MockContainerClient("landing-zone"),
         MockContainerClient("quarantine"),
         MockContainerClient("data"),
-        MockContainerClient("logs")
+        MockContainerClient("logs"),
+        MockContainerClient("deletion-requests")
     )
 
-landing_client, quarantine_client, data_client, logs_client = get_mock_clients()
+landing_client, quarantine_client, data_client, logs_client, deletion_client = get_mock_clients()
 
 # ==========================================
 # 🤖 MINI-PIPELINE
@@ -208,19 +209,22 @@ def _save_mock_execution_log(metrics, processing_log):
         import traceback
         traceback.print_exc()
 
-def run_mock_deletions(pending_deletions):
-    """Process deletion requests and remove records from mock data."""
+def run_mock_deletions():
+    """Process deletion requests from the deletion-requests container and remove records from mock data."""
     from datetime import datetime
     
     total_deleted = 0
     partitions_updated = 0
     processing_log = []  # Use processing_log for CSV storage
     
+    # Get pending deletion requests from container
+    deletion_blobs = list(deletion_client.list_blobs())
+    
     # Initialize deletion log metrics
     execution_start = datetime.now()
     metrics = {
         'execution_timestamp': execution_start.isoformat(),
-        'files_processed': len(pending_deletions),
+        'files_processed': len(deletion_blobs),
         'rows_deleted': 0,
         'partitions_updated': 0
     }
@@ -240,14 +244,20 @@ def run_mock_deletions(pending_deletions):
     
     processing_log.append(f"📊 Current data contains {original_count} records")
     
-    # Collect all IDs to delete - avoid unnecessary copy
+    # Collect all IDs to delete from deletion-requests container
     all_ids_to_delete = set()
     
-    for item in pending_deletions:
-        deletion_df = item['dataframe']  # No need to copy, we're only reading
+    for blob in deletion_blobs:
+        blob_client = deletion_client.get_blob_client(blob.name)
+        data = blob_client.download_blob().readall()
+        if isinstance(data, str): data = data.encode('utf-8')
+        deletion_df = pd.read_csv(io.BytesIO(data), dtype=str)
         ids_from_file = set(deletion_df['sample_id'].tolist())
         all_ids_to_delete.update(ids_from_file)
-        processing_log.append(f"✅ Processed {item['filename']}: {len(ids_from_file)} deletion request(s)")
+        processing_log.append(f"✅ Processed {blob.name}: {len(ids_from_file)} deletion request(s)")
+        
+        # Delete processed deletion request file (mimics production behavior)
+        blob_client.delete_blob()
     
     processing_log.append(f"🔍 Total unique deletion requests: {len(all_ids_to_delete)}")
     
@@ -789,21 +799,16 @@ elif page == "🗑️ Delete Records":
                 
                 st.divider()
                 
-                # Upload button (just stages the file, doesn't process)
+                # Upload button
                 if st.button("📤 Upload Deletion Request", type="primary"):
                     try:
                         from datetime import datetime
                         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                         filename = f"deletion_request_{timestamp}.csv"
                         
-                        # Store in session state to simulate pending deletion requests
-                        if 'pending_deletions' not in st.session_state:
-                            st.session_state.pending_deletions = []
-                        
-                        st.session_state.pending_deletions.append({
-                            'filename': filename,
-                            'dataframe': deletion_df.copy()
-                        })
+                        # Upload to deletion-requests container (mimics production)
+                        csv_data = deletion_df.to_csv(index=False).encode('utf-8')
+                        deletion_client.upload_blob(filename, csv_data, overwrite=True)
                         
                         st.success(f"✅ Uploaded deletion request: `{filename}`")
                         st.info("""
@@ -823,91 +828,92 @@ elif page == "🗑️ Delete Records":
     
     st.divider()
     
-    # Show existing deletion requests (using session state)
+    # Show existing deletion requests from container
     st.subheader("📦 Pending Deletion Requests")
     
-    if 'pending_deletions' not in st.session_state:
-        st.session_state.pending_deletions = []
-    
-    if not st.session_state.pending_deletions:
-        st.info("📭 No pending deletion requests")
-    else:
-        st.warning(f"⚠️ Found {len(st.session_state.pending_deletions)} pending deletion request(s)")
+    try:
+        deletion_blobs = list(deletion_client.list_blobs())
         
-        # List files
-        for item in st.session_state.pending_deletions:
-            st.text(f"📄 {item['filename']}")
+        if not deletion_blobs:
+            st.info("📭 No pending deletion requests")
+        else:
+            st.warning(f"⚠️ Found {len(deletion_blobs)} pending deletion request(s)")
+            
+            # List files
+            for blob in deletion_blobs:
+                st.text(f"📄 {blob.name}")
         
-        st.divider()
-        
-        # Preview pending deletion files
-        if st.session_state.pending_deletions:
+            st.divider()
+            
+            # Preview pending deletion files
             st.subheader("📋 Preview Deletion Requests")
             selected_deletion_file = st.selectbox(
                 "Select file to preview:",
-                [item['filename'] for item in st.session_state.pending_deletions],
+                [blob.name for blob in deletion_blobs],
                 key="deletion_preview_selector"
             )
             
             if selected_deletion_file:
-                selected_item = next(item for item in st.session_state.pending_deletions if item['filename'] == selected_deletion_file)
-                preview_df = selected_item['dataframe']
-                st.caption(f"Showing all rows of **{selected_deletion_file}**")
-                st.dataframe(preview_df, width="stretch")
-                
-                # Show summary
-                st.info(f"📊 Total records to delete: **{len(preview_df)}**")
-                
-                # Delete button with confirmation
-                st.divider()
-                if st.button("🗑️ Delete This Request", type="secondary", key="delete_deletion_request"):
-                    st.session_state.confirm_delete_deletion = selected_deletion_file
-                
-                # Confirmation dialog
-                if st.session_state.get("confirm_delete_deletion") == selected_deletion_file:
-                    st.warning(f"⚠️ Are you sure you want to delete `{selected_deletion_file}`? This action cannot be undone.")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_deletion"):
-                            try:
-                                # Remove from session state
-                                st.session_state.pending_deletions = [
-                                    item for item in st.session_state.pending_deletions 
-                                    if item['filename'] != selected_deletion_file
-                                ]
+                blob_client = deletion_client.get_blob_client(selected_deletion_file)
+                try:
+                    data = blob_client.download_blob().readall()
+                    if isinstance(data, str): data = data.encode('utf-8')
+                    preview_df = pd.read_csv(io.BytesIO(data))
+                    st.caption(f"Showing all rows of **{selected_deletion_file}**")
+                    st.dataframe(preview_df, width="stretch")
+                    
+                    # Show summary
+                    st.info(f"📊 Total records to delete: **{len(preview_df)}**")
+                    
+                    # Delete button with confirmation
+                    st.divider()
+                    if st.button("🗑️ Delete This Request", type="secondary", key="delete_deletion_request"):
+                        st.session_state.confirm_delete_deletion = selected_deletion_file
+                    
+                    # Confirmation dialog
+                    if st.session_state.get("confirm_delete_deletion") == selected_deletion_file:
+                        st.warning(f"⚠️ Are you sure you want to delete `{selected_deletion_file}`? This action cannot be undone.")
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            if st.button("✅ Yes, Delete", type="primary", key="confirm_yes_deletion"):
+                                try:
+                                    blob_client.delete_blob()
+                                    st.session_state.confirm_delete_deletion = None
+                                    st.session_state.toast_message = f"Deleted `{selected_deletion_file}` from deletion requests"
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Failed to delete: {e}")
+                        with col2:
+                            if st.button("❌ Cancel", key="confirm_no_deletion"):
                                 st.session_state.confirm_delete_deletion = None
-                                st.session_state.toast_message = f"Deleted `{selected_deletion_file}` from pending requests"
                                 st.rerun()
-                            except Exception as e:
-                                st.error(f"Failed to delete: {e}")
-                    with col2:
-                        if st.button("❌ Cancel", key="confirm_no_deletion"):
-                            st.session_state.confirm_delete_deletion = None
-                            st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Error reading file: {e}")
         
-        st.divider()
-        
-        # Trigger deletion workflow button
-        st.subheader("🚀 Process Deletions")
-        if st.button("▶️ Trigger Delete Records Workflow", type="primary", use_container_width=True):
-            with st.status("🚀 Processing Delete Workflow...", expanded=True) as status:
-                import time
-                st.write("🔍 Scanning pending deletion requests...")
-                time.sleep(0.5)
-                
-                # Actually perform the deletions
-                total_deleted, partitions_updated = run_mock_deletions(st.session_state.pending_deletions)
-                
-                # Clear pending deletions
-                st.session_state.pending_deletions = []
-                
-                if total_deleted > 0:
-                    status.update(label="✅ Deletions Complete!", state="complete")
-                    st.success(f"🗑️ Successfully deleted {total_deleted} record(s)!")
-                    st.info("📊 View detailed deletion metrics in the Deletion Execution History section below")
-                else:
-                    status.update(label="✅ Workflow Complete", state="complete")
-                    st.info("ℹ️ No matching records found to delete.")
+            st.divider()
+            
+            # Trigger deletion workflow button
+            st.subheader("🚀 Process Deletions")
+            if st.button("▶️ Trigger Delete Records Workflow", type="primary", use_container_width=True):
+                with st.status("🚀 Processing Delete Workflow...", expanded=True) as status:
+                    import time
+                    st.write("🔍 Scanning deletion-requests container...")
+                    time.sleep(0.5)
+                    
+                    # Actually perform the deletions
+                    total_deleted, partitions_updated = run_mock_deletions()
+                    
+                    if total_deleted > 0:
+                        status.update(label="✅ Deletions Complete!", state="complete")
+                        st.success(f"🗑️ Successfully deleted {total_deleted} record(s)!")
+                        st.info("📊 View detailed deletion metrics in the Deletion Execution History section below")
+                    else:
+                        status.update(label="✅ Workflow Complete", state="complete")
+                        st.info("ℹ️ No matching records found to delete.")
+    
+    except Exception as e:
+        st.error(f"Failed to process deletion requests: {e}")
     
     st.divider()
     

@@ -19,7 +19,8 @@ INITIAL_STATE = {
             b"TEST-002,2025-12-02,NEG,0"
         )
     },
-    "logs": {}
+    "logs": {},
+    "deletion-requests": {}
 }
 
 def reset_mock_cloud():
@@ -49,20 +50,30 @@ class MockBlobClient:
 
     def exists(self):
         ensure_mock_cloud()
+        if self.container not in st.session_state.mock_cloud:
+            return False
         return self.name in st.session_state.mock_cloud.get(self.container, {})
 
     def download_blob(self):
         ensure_mock_cloud()
+        if self.container not in st.session_state.mock_cloud:
+            st.session_state.mock_cloud[self.container] = {}
         data = st.session_state.mock_cloud[self.container].get(self.name, b"")
         return MockStreamDownloader(data)
 
     def delete_blob(self):
         ensure_mock_cloud()
+        if self.container not in st.session_state.mock_cloud:
+            return  # Nothing to delete if container doesn't exist
         if self.name in st.session_state.mock_cloud[self.container]:
             del st.session_state.mock_cloud[self.container][self.name]
 
     def upload_blob(self, data, overwrite=True):
         ensure_mock_cloud()
+        # Ensure container exists in mock_cloud
+        if self.container not in st.session_state.mock_cloud:
+            st.session_state.mock_cloud[self.container] = {}
+        
         if hasattr(data, "read"):
             content = data.read()
             if hasattr(data, "seek"): data.seek(0)
@@ -72,6 +83,8 @@ class MockBlobClient:
 
     def get_blob_properties(self):
         ensure_mock_cloud()
+        if self.container not in st.session_state.mock_cloud:
+            st.session_state.mock_cloud[self.container] = {}
         data = st.session_state.mock_cloud[self.container].get(self.name, b"")
         return MockBlobProperties(self.name, size=len(data))
 
