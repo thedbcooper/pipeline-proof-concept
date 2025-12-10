@@ -23,7 +23,22 @@ except ImportError:
     st.stop()
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Lab Data Admin (Portfolio Demo)", layout="wide")
+st.set_page_config(
+    page_title="Lab Data Admin (Portfolio Demo)", 
+    layout="wide",
+    initial_sidebar_state="expanded",
+    menu_items={
+        'About': """### Lab Data Pipeline Admin Console
+        **Built by Daniel B. Cooper**
+        
+        An agile data engineering solution.
+        
+        - [GitHub](https://github.com/thedbcooper)
+        - [LinkedIn](https://www.linkedin.com/in/danielblakecooper/)
+        - [ORCID](https://orcid.org/0000-0002-2218-7916)
+        """
+    }
+)
 
 # ==========================================
 # 🧠 SESSION STATE INIT
@@ -362,6 +377,40 @@ with st.sidebar:
         ["🏠 Start Here", "📤 Upload New Data", "🛠️ Fix Quarantine", "🗑️ Delete Records", "⚙️ Data Ingestion", "📊 Final Report"],
         key="nav_selection"
     )
+    
+    st.divider()
+    
+    # Profile links
+    st.markdown("""
+    <style>
+    .profile-link {
+        display: inline-block;
+        transition: transform 0.3s ease, opacity 0.7s ease;
+        opacity: 0.8;
+    }
+    .profile-link:hover {
+        transform: scale(1.2) rotate(5deg);
+        opacity: 1;
+    }
+    </style>
+    <div style='display: flex; gap: 20px; align-items: center; margin-top: 10px;'>
+        <a href='https://github.com/thedbcooper' target='_blank' title='GitHub' class='profile-link'>
+            <img src='https://cdn-icons-png.flaticon.com/512/25/25231.png' width='36' height='36'/>
+        </a>
+        <a href='https://www.linkedin.com/in/danielblakecooper/' target='_blank' title='LinkedIn' class='profile-link'>
+            <img src='https://cdn-icons-png.flaticon.com/512/174/174857.png' width='36' height='36'/>
+        </a>
+        <a href='https://orcid.org/0000-0002-2218-7916' target='_blank' title='ORCID' class='profile-link'>
+            <img src='https://orcid.org/assets/vectors/orcid.logo.icon.svg' width='36' height='36'/>
+        </a>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.space()
+    
+    # Author credit
+    st.caption("👨‍💻 Built by **Daniel B. Cooper**")
+    st.caption("🎯 Data Engineering Portfolio")
 
 # ==========================================
 # PAGE 0: LANDING PAGE
@@ -369,8 +418,8 @@ with st.sidebar:
 if page == "🏠 Start Here":
     st.title("🧬 Lab Data Pipeline: Admin Console")
     st.markdown("""
-    **Welcome.** This dashboard allows Public Health Epidemiologists to safely manage the flow of sensitive lab data 
-    into the Azure Lakehouse without needing to write code.
+    **Welcome.** This dashboard allows users to safely manage the flow of data
+    into an Azure Lakehouse without needing to write code.
     """)
     
     # Demo vs Production callout
