@@ -35,6 +35,11 @@ if "upload_counter" not in st.session_state:
 if "upload_success" not in st.session_state:
     st.session_state.upload_success = False
 
+# Show toast notifications after rerun
+if "toast_message" in st.session_state:
+    st.toast(st.session_state.toast_message)
+    del st.session_state.toast_message
+
 # ==========================================
 # ☁️ MOCK CLIENT INITIALIZATION
 # ==========================================
@@ -108,8 +113,8 @@ def run_mock_pipeline():
             rows = df.to_dict('records')
             for row in rows:
                 try:
-                    # Pydantic validation
-                    valid_sample = LabResult(**row)
+                    # Pydantic validation - Pydantic will handle type conversion from strings
+                    valid_sample = LabResult(**row)  # type: ignore[arg-type]
                     all_valid_rows.append(valid_sample.model_dump())
                     valid_count += 1
                 except ValidationError as e:
@@ -516,7 +521,7 @@ elif page == "⚙️ Process & Monitor":
                                     try:
                                         blob_client.delete_blob()
                                         st.session_state.confirm_delete_landing = None
-                                        st.toast(f"Deleted `{selected_blob_name}` from landing zone")
+                                        st.session_state.toast_message = f"Deleted `{selected_blob_name}` from landing zone"
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Failed to delete: {e}")
@@ -620,24 +625,10 @@ elif page == "⚙️ Process & Monitor":
                 if len(combined_logs) > 0:
                     latest = combined_logs.iloc[0]
                     
-                    st.write("**Latest Pipeline Run:**")
-                    col1, col2, col3, col4 = st.columns(4)
-                    
-                    with col1:
-                        st.metric("Files Processed", int(latest['files_processed']))
-                    with col2:
-                        st.metric("Rows Quarantined", int(latest['rows_quarantined']))
-                    with col3:
-                        st.metric("Rows Inserted", int(latest['rows_inserted']))
-                    with col4:
-                        st.metric("Rows Updated", int(latest['rows_updated']))
-                    
-                    st.caption(f"Executed at: {latest['execution_timestamp']}")
-                    
-                    # Display processing details if available
+                    # Display processing details directly if available
                     if 'processing_details' in latest and latest['processing_details']:
-                        st.divider()
-                        st.subheader("📋 Processing Details")
+                        st.write("**📋 Latest Run Details:**")
+                        st.caption(f"Executed at: {latest['execution_timestamp']}")
                         details = latest['processing_details'].split(' | ')
                         for detail in details:
                             st.markdown(f"{detail}")
@@ -817,7 +808,7 @@ elif page == "🗑️ Delete Records":
                                     if item['filename'] != selected_deletion_file
                                 ]
                                 st.session_state.confirm_delete_deletion = None
-                                st.toast(f"Deleted `{selected_deletion_file}` from pending requests")
+                                st.session_state.toast_message = f"Deleted `{selected_deletion_file}` from pending requests"
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Failed to delete: {e}")
@@ -996,7 +987,7 @@ elif page == "🛠️ Fix Quarantine":
                     st.session_state.staged_fixes.append({
                         "original_name": sel, "dataframe": clean_df
                     })
-                    st.toast("Staged for upload!")
+                    st.session_state.toast_message = "Staged for upload!"
                     st.rerun()
             
             with col2:
@@ -1013,7 +1004,7 @@ elif page == "🛠️ Fix Quarantine":
                             client = quarantine_client.get_blob_client(sel)
                             client.delete_blob()
                             st.session_state.confirm_delete_quarantine = None
-                            st.toast(f"Deleted `{sel}` from quarantine")
+                            st.session_state.toast_message = f"Deleted `{sel}` from quarantine"
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed to delete: {e}")
@@ -1046,6 +1037,12 @@ elif page == "🛠️ Fix Quarantine":
                 df_preview = selected_item['dataframe'].head(10)
                 st.caption(f"Showing first 10 rows of **{preview_choice}**")
                 st.dataframe(df_preview, width="stretch")
+                
+                # Unstage button
+                if st.button(f"↩️ Unstage {preview_choice}", type="secondary", key="unstage_button"):
+                    st.session_state.staged_fixes = [item for item in st.session_state.staged_fixes if item['original_name'] != preview_choice]
+                    st.session_state.toast_message = f"Unstaged `{preview_choice}` - you can edit it again"
+                    st.rerun()
         
         st.divider()
         

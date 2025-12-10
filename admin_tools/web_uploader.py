@@ -26,6 +26,11 @@ if "upload_counter" not in st.session_state:
 if "upload_success" not in st.session_state:
     st.session_state.upload_success = False
 
+# Show toast notifications after rerun
+if "toast_message" in st.session_state:
+    st.toast(st.session_state.toast_message)
+    del st.session_state.toast_message
+
 # --- AZURE CONNECTION ---
 @st.cache_resource
 def get_blob_service():
@@ -245,7 +250,7 @@ elif page == "⚙️ Process & Monitor":
                                     try:
                                         blob_client.delete_blob()
                                         st.session_state.confirm_delete_landing = None
-                                        st.toast(f"Deleted `{selected_blob_name}` from landing zone")
+                                        st.session_state.toast_message = f"Deleted `{selected_blob_name}` from landing zone"
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Failed to delete: {e}")
@@ -609,7 +614,7 @@ elif page == "🗑️ Delete Records":
                                 try:
                                     blob_client.delete_blob()
                                     st.session_state.confirm_delete_deletion = None
-                                    st.toast(f"Deleted `{selected_deletion_file}` from deletion requests")
+                                    st.session_state.toast_message = f"Deleted `{selected_deletion_file}` from deletion requests"
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Failed to delete: {e}")
@@ -887,7 +892,7 @@ elif page == "🛠️ Fix Quarantine":
                         "status": "Ready"
                     })
                     
-                    st.toast(f"Staged `{selected_file}` for upload!")
+                    st.session_state.toast_message = f"Staged `{selected_file}` for upload!"
                     st.rerun()
             
             with col2:
@@ -904,7 +909,7 @@ elif page == "🛠️ Fix Quarantine":
                             blob_client = quarantine_client.get_blob_client(selected_file)
                             blob_client.delete_blob()
                             st.session_state.confirm_delete_quarantine = None
-                            st.toast(f"Deleted `{selected_file}` from quarantine")
+                            st.session_state.toast_message = f"Deleted `{selected_file}` from quarantine"
                             st.rerun()
                         except Exception as e:
                             st.error(f"Failed to delete: {e}")
@@ -937,6 +942,12 @@ elif page == "🛠️ Fix Quarantine":
                 df_preview = selected_item['dataframe'].head(10)
                 st.caption(f"Showing first 10 rows of **{preview_choice}**")
                 st.dataframe(df_preview, width="stretch")
+                
+                # Unstage button
+                if st.button(f"↩️ Unstage {preview_choice}", type="secondary", key="unstage_button"):
+                    st.session_state.staged_fixes = [item for item in st.session_state.staged_fixes if item['original_name'] != preview_choice]
+                    st.session_state.toast_message = f"Unstaged `{preview_choice}` - you can edit it again"
+                    st.rerun()
         
         st.divider()
         
