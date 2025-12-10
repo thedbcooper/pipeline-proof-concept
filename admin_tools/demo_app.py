@@ -308,7 +308,25 @@ def _save_mock_deletion_log(metrics, processing_log):
 # ==========================================
 with st.sidebar:
     st.header("🧬 Lab Data Admin")
-    st.info("ℹ️ **DEMO MODE ACTIVE**\n\nThis app is running in an isolated environment. Changes will not affect any real data.")
+    st.info("ℹ️ **DEMO MODE ACTIVE**\n\nThis app uses in-memory mock storage. No real Azure resources are connected.")
+    
+    with st.expander("🏗️ **Production Architecture**"):
+        st.markdown("""
+        **Azure Blob Storage:**
+        - `landing-zone` - Incoming CSV files
+        - `quarantine` - Invalid rows for review
+        - `data` - Partitioned Parquet files
+        - `logs` - Execution history
+        - `deletion-requests` - Pending deletes
+        
+        **GitHub Actions:**
+        - `weekly_pipeline.yaml` - Data ingestion
+        - `delete_records.yaml` - Record removal
+        
+        **Authentication:**
+        - Azure: `DefaultAzureCredential`
+        - GitHub: Personal Access Token
+        """)
 
     if st.button("🔄 Reset Demo Data"):
         reset_mock_cloud()
@@ -341,6 +359,13 @@ if page == "🏠 Start Here":
     st.markdown("""
     **Welcome.** This dashboard allows Public Health Epidemiologists to safely manage the flow of sensitive lab data 
     into the Azure Lakehouse without needing to write code.
+    """)
+    
+    # Demo vs Production callout
+    st.success("""
+    🎯 **Portfolio Demo:** This is a fully-functional demonstration of the production admin tool. 
+    Each page includes a **\"How this works in Production\"** expander explaining the Azure & GitHub Actions integration.
+    Click the 🏗️ **Production Architecture** expander in the sidebar for an overview.
     """)
     
     st.divider()
@@ -412,6 +437,16 @@ elif page == "📤 Upload New Data":
     st.title("📤 Upload New Data")
     st.caption("Upload new CSV files to the landing zone for processing")
     
+    with st.expander("🔧 **How this works in Production**", expanded=False):
+        st.markdown("""
+        **Azure Blob Storage Integration:**
+        - Files are uploaded to the `landing-zone` container in Azure Blob Storage
+        - Uses `DefaultAzureCredential` for secure authentication (supports managed identity, Azure CLI, etc.)
+        - The `BlobServiceClient` handles all upload operations with automatic retry logic
+        
+        *In this demo, uploads go to an in-memory mock storage that simulates Azure's behavior.*
+        """)
+    
     uploaded_files = st.file_uploader(
         "Drag & Drop CSV Files", 
         type="csv", 
@@ -470,6 +505,24 @@ elif page == "📤 Upload New Data":
 elif page == "⚙️ Process & Monitor":
     st.title("⚙️ Process & Monitor")
     st.caption("View queued files, trigger pipeline processing, and review execution history")
+    
+    with st.expander("🔧 **How this works in Production**", expanded=False):
+        st.markdown("""
+        **GitHub Actions Workflow Dispatch:**
+        - The "Trigger Weekly Pipeline" button calls the GitHub API to dispatch `weekly_pipeline.yaml`
+        - Requires `GITHUB_TOKEN` with `repo` and `workflow` permissions in `.env`
+        - Pipeline runs on GitHub-hosted runners with Azure credentials stored as GitHub Secrets
+        
+        **Automated Scheduling:**
+        - Production pipeline runs automatically via cron schedule (weekly)
+        - Manual triggers available for ad-hoc processing
+        
+        **Real-time Status:**
+        - "Check Latest Run" queries GitHub Actions API for workflow run status
+        - Links directly to GitHub Actions logs for detailed debugging
+        
+        *In this demo, the pipeline runs locally in-browser using Python logic that mirrors the production scripts.*
+        """)
     
     # LANDING ZONE FILE PREVIEW
     st.subheader("📦 Files in Landing Zone")
@@ -693,6 +746,21 @@ elif page == "🗑️ Delete Records":
     3. Matching records will be permanently deleted from the data storage
     4. Updated parquet files will be saved back to storage
     """)
+    
+    with st.expander("🔧 **How this works in Production**", expanded=False):
+        st.markdown("""
+        **Deletion Request Container:**
+        - Deletion CSVs are uploaded to a dedicated `deletion-requests` container in Azure
+        - This provides an audit trail of all deletion requests before processing
+        
+        **GitHub Actions Workflow:**
+        - The "Trigger Delete Workflow" button dispatches `delete_records.yaml` via GitHub API
+        - The workflow scans all year/week partitions in the `data` container
+        - Matching records are removed from Parquet files and re-saved
+        - Deletion logs are written to the `logs` container for compliance
+        
+        *In this demo, deletions are processed immediately in-memory against mock data.*
+        """)
     
     st.warning("⚠️ **Warning:** Deletions are permanent and cannot be undone!")
     
@@ -951,6 +1019,26 @@ elif page == "🗑️ Delete Records":
 elif page == "🛠️ Fix Quarantine":
     st.title("🛠️ Quarantine Manager")
     
+    with st.expander("🔧 **How this works in Production**", expanded=False):
+        st.markdown("""
+        **Quarantine Container:**
+        - Invalid rows are automatically moved to the `quarantine` container during pipeline processing
+        - Each quarantine file includes `pipeline_error` and `source_file` columns for debugging
+        - Files persist until manually reviewed and fixed by an epidemiologist
+        
+        **Pydantic Validation:**
+        - Data validation uses Pydantic models (`models.py`) to enforce schema rules
+        - Validates: `sample_id` format, `test_date` as valid date, `result` in [POS, NEG, IND], `viral_load` as integer
+        - Detailed error messages help identify exactly which field failed validation
+        
+        **Fix & Re-upload Flow:**
+        - Fixed files are uploaded back to `landing-zone` container
+        - Original quarantine file is deleted after successful fix
+        - Re-trigger the pipeline to process the corrected data
+        
+        *In this demo, the quarantine container is simulated in-memory with sample error data.*
+        """)
+    
     blob_list = list(quarantine_client.list_blobs())
     staged_names = [item['original_name'] for item in st.session_state.staged_fixes]
     remaining_blobs = [b.name for b in blob_list if b.name not in staged_names]
@@ -1074,6 +1162,24 @@ elif page == "🛠️ Fix Quarantine":
 # ==========================================
 elif page == "📊 Final Report":
     st.title("📊 CDC Final Export Review")
+    
+    with st.expander("🔧 **How this works in Production**", expanded=False):
+        st.markdown("""
+        **Data Container & Partitioning:**
+        - Production data is stored in the `data` container as Parquet files
+        - Partitioned by `year=YYYY/week=WW/` for efficient querying and incremental updates
+        - The pipeline exports a consolidated `final_cdc_export.csv` for easy download
+        
+        **Upsert Logic:**
+        - Records are matched by `sample_id` (primary key)
+        - New records are inserted; existing records are updated with latest values
+        - Sorted by `test_date` descending for most recent results first
+        
+        **Azure Blob Properties:**
+        - Large files streamed directly to browser for download
+        
+        *In this demo, data is stored in-memory and exported as CSV on demand.*
+        """)
     
     client = data_client.get_blob_client("final_cdc_export.csv")
     
