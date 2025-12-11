@@ -572,7 +572,12 @@ elif page == "⚙️ Data Ingestion":
         **Automated Scheduling:**
         - Production pipeline runs automatically via cron schedule (weekly)
         - Manual triggers available for ad-hoc processing
-        
+                    
+        **Upsert Logic:**
+        - Records are matched by `sample_id` (primary key)
+        - New records are inserted; existing records are updated with latest values
+        - Sorted by `test_date` descending for most recent results first
+                    
         **Real-time Auto-Monitoring with Streamlit Fragments:**
         - Uses `@st.fragment(run_every="15s")` to poll GitHub Actions API every 15 seconds
         - Automatically detects when new workflow starts (vs. old runs) using UTC timestamps
@@ -1413,11 +1418,6 @@ elif page == "📊 Final Report":
         - Production data is stored in the `data` container as Parquet files
         - Partitioned by `year=YYYY/week=WW/` for efficient querying and incremental updates
         - The pipeline exports a consolidated `final_cdc_export.csv` for easy download
-        
-        **Upsert Logic:**
-        - Records are matched by `sample_id` (primary key)
-        - New records are inserted; existing records are updated with latest values
-        - Sorted by `test_date` descending for most recent results first
         
         **Azure Blob Properties:**
         - Large files streamed directly to browser for download
