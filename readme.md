@@ -9,7 +9,7 @@
 
 An automated, serverless data pipeline designed to ingest, validate, and aggregate data. This project implements a **"Human-in-the-Loop"** architecture where invalid data is automatically quarantined, fixed via a UI, and re-injected into the pipeline without code changes.
 
-### 🎮 **[Live Portfolio Demo](https://public-health-data-agile-pipeline.streamlit.app/)**
+### 🎮 **[Live Portfolio Demo](https://public-health-data-pipeline.streamlit.app/)**
 
 > **Note to Viewer:** The "Real App" runs locally and is not deployed. This live demo uses **Interface Abstraction** to simulate Azure Blob Storage in memory, ensuring no connection to real cloud infrastructure.
 
@@ -220,7 +220,7 @@ The Streamlit Admin Console provides a complete self-service interface:
 
 ### Option A: The Portfolio Demo (Browser)
 
-Simply visit the **[Live App](https://public-health-data-agile-pipeline.streamlit.app/)**. No setup required.
+Simply visit the **[Live App](https://public-health-data-pipeline.streamlit.app/)**. No setup required.
 
 ### Option B: The Real Production App (Local)
 
