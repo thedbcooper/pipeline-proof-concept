@@ -358,13 +358,7 @@ with st.sidebar:
 
     if st.button("🔄 Reset Demo Data"):
         reset_mock_cloud()
-        # Seed quarantine with unique ID
-        q_data = (
-            b"sample_id,test_date,result,viral_load,pipeline_error,source_file\n"
-            b"TEST-999,2025-12-05,Positive,1000,\"Value error, Invalid result code...\",demo.csv"
-        )
-        quarantine_client.get_blob_client("quarantine_demo.csv").upload_blob(q_data, overwrite=True)
-
+        
         st.session_state.staged_fixes = []
         if "preview_df" in st.session_state: del st.session_state.preview_df
         
