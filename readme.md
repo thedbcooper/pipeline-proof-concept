@@ -1,4 +1,4 @@
-# 🧬 Public Health Data Pipeline (Agile Lakehouse)
+# 🧬 Public Health Data Pipeline (Lightweight Data Lakehouse)
 
 [![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python&logoColor=white)](https://www.python.org)
 [![Azure](https://img.shields.io/badge/Cloud-Azure%20Blob-0078D4?logo=microsoft-azure&logoColor=white)](https://azure.microsoft.com)

@@ -24,7 +24,7 @@ except ImportError:
 
 # --- CONFIGURATION ---
 st.set_page_config(
-    page_title="🧬 Agile Data Pipeline: Admin Console", 
+    page_title="🧬 Data Pipeline: Admin Console", 
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -335,7 +335,7 @@ def _save_mock_deletion_log(metrics, processing_log):
 # SIDEBAR: NAVIGATION & CONTROLS
 # ==========================================
 with st.sidebar:
-    st.header("🧬 Agile Data Pipeline: Demo Admin Console")
+    st.header("🧬 Data Pipeline: Demo Admin Console")
     st.info("ℹ️ **DEMO MODE ACTIVE**\n\nThis app uses in-memory mock storage. No real Azure resources are connected.")
     
     with st.expander("🏗️ **Production Architecture**"):
@@ -417,7 +417,7 @@ with st.sidebar:
 # PAGE 0: LANDING PAGE
 # ==========================================
 if page == "🏠 Start Here":
-    st.title("🧬 Agile Data Pipeline: Admin Console")
+    st.title("🧬 Data Pipeline: Admin Console")
     st.markdown("""
     **Welcome.** This dashboard allows users to safely manage the flow of data
     into an Azure Lakehouse without needing to write code.
@@ -1481,7 +1481,7 @@ elif page == "ℹ️ About":
     
     ## The Solution
     
-    I designed and built this agile data pipeline to enable **self-service analytics** - empowering public health 
+    I designed and built this lightweight data lakehouse architecture and user interface to enable **self-service analytics** - empowering public health 
     teams to manage their own data flows without waiting on IT support. The system automatically validates incoming 
     lab results against schema requirements, quarantines errors for human review, and maintains a clean master 
     dataset ready for immediate analysis.

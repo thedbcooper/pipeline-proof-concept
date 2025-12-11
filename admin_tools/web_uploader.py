@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 
 # --- CONFIGURATION ---
 st.set_page_config(
-    page_title="🧬 Agile Data Pipeline: Admin Console",
+    page_title="🧬 Data Pipeline: Admin Console",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -70,7 +70,7 @@ except Exception as e:
 # SIDEBAR: NAVIGATION & CONTROLS
 # ==========================================
 with st.sidebar:
-    st.header("🧬 Agile Data Pipeline: Admin Console")
+    st.header("🧬 Data Pipeline: Admin Console")
     st.caption(f"Storage: `{ACCOUNT_NAME}`")
     
     page = st.radio(
@@ -117,7 +117,7 @@ with st.sidebar:
 # PAGE 0: LANDING PAGE
 # ==========================================
 if page == "🏠 Start Here":
-    st.title("🧬 Agile Data Pipeline: Admin Console")
+    st.title("🧬 Data Pipeline: Admin Console")
     st.markdown("""
     **Welcome.** This dashboard allows users to safely manage the flow of data 
     into an Azure Lakehouse without needing to write code.
@@ -1322,7 +1322,7 @@ elif page == "ℹ️ About":
     
     ## The Solution
     
-    I designed and built this agile data pipeline to enable **self-service analytics** - empowering public health 
+    I designed and built this lightweight data lakehouse architecture and user interface to enable **self-service analytics** - empowering public health 
     teams to manage their own data flows without waiting on IT support. The system automatically validates incoming 
     lab results against schema requirements, quarantines errors for human review, and maintains a clean master 
     dataset ready for immediate analysis.
