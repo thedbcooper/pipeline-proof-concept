@@ -1542,7 +1542,7 @@ elif page == "ℹ️ About":
     with skill_col1:
         st.markdown("""
         **Languages & Frameworks:**
-        - Python (Pandas, Pydantic)
+        - Python (Pandas, Polars, Pydantic)
         - SQL
         - YAML (CI/CD)
         - Markdown
